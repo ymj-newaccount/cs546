@@ -1,0 +1,58 @@
+<h1>Admin Dashboard</h1>
+
+{{#if synced}}
+  <p><strong>Data sync completed.</strong></p>
+{{/if}}
+
+<p>This is the admin dashboard for CommuteAble NYC (Person A scope).</p>
+<p>The button below triggers a full snapshot import (seedAll) from the
+   external open-data sources into MongoDB.</p>
+
+<form method="post" action="/admin/sync" style="margin-bottom: 1.5rem;">
+  <button type="submit">Sync Data (run seedAll)</button>
+</form>
+
+<hr />
+
+<h2>Recent Reports</h2>
+
+{{#if hasReports}}
+  <table border="1" cellpadding="4" cellspacing="0">
+    <thead>
+      <tr>
+        <th>Report ID</th>
+        <th>Target</th>
+        <th>Text</th>
+        <th>Status</th>
+        <th>Created At</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each reports}}
+        <tr>
+          <td>{{this.reportId}}</td>
+          <td>{{this.targetType}}: {{this.targetId}}</td>
+          <td>{{this.text}}</td>
+          <td>{{this.status}}</td>
+          <td>{{this.createdAt}}</td>
+          <td>
+            <form method="post" action="/admin/reports/{{this.reportId}}/hide" style="display:inline;">
+              <button type="submit">Hide</button>
+            </form>
+            <form
+              method="post"
+              action="/admin/reports/{{this.reportId}}/delete"
+              style="display:inline;"
+              onsubmit="return confirm('Delete this report permanently?');"
+            >
+              <button type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {{/each}}
+    </tbody>
+  </table>
+{{else}}
+  <p>No reports found in the database yet.</p>
+{{/if}}

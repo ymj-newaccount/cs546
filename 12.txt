@@ -336,14 +336,17 @@ function buildApsDocs(csvRows) {
 }
 
 // -----------------------------------------------------------------------------
-// Curb ramps mapping (with normalized attributes schema)
+// Curb ramps mapping
 // -----------------------------------------------------------------------------
+
+// Convert the Pedestrian Ramp Locations CSV rows into documents
+// for the curb_ramps collection. The attributes field is kept flexible:
+// we collect many "slope / width / length / obstacle" columns into a sub-object.
 function buildCurbRampDocs(csvRows) {
   return csvRows
     .map((row, index) => {
       const cols = Object.keys(row);
 
-      // --------- Basic id / location / street info (same as before) ---------
       const idKey =
         cols.find(
           (k) =>
@@ -374,114 +377,26 @@ function buildCurbRampDocs(csvRows) {
         cols.find(
           (k) =>
             k.toLowerCase().includes('street') ||
-            k.toLowerCase().includes('stname') ||
             k.toLowerCase().includes('st_name')
         ) || null;
       const streetName = streetKey ? row[streetKey] : null;
 
-      // --------- Helper: pick a field by column name / keyword tokens ---------
-      function pickField(preferredKeys = [], includeTokens = []) {
-        // 1) Prefer exact header name matches (case-insensitive)
-        for (const cand of preferredKeys) {
-          const key = cols.find(
-            (k) => k.toLowerCase() === cand.toLowerCase()
-          );
-          if (key && row[key] !== undefined && row[key] !== '') {
-            return row[key];
-          }
-        }
-        // 2) Fallback: any header whose name contains all given tokens
-        if (includeTokens.length > 0) {
-          const key = cols.find((k) => {
-            const lower = k.toLowerCase();
-            return includeTokens.every((tok) =>
-              lower.includes(tok.toLowerCase())
-            );
-          });
-          if (key && row[key] !== undefined && row[key] !== '') {
-            return row[key];
-          }
-        }
-        return null;
-      }
-
-      function pickNumber(preferredKeys = [], includeTokens = []) {
-        const raw = pickField(preferredKeys, includeTokens);
-        if (raw == null) return null;
-        return toNumber(raw);
-      }
-
-      // --------- Rename raw CSV columns into the normalized attributes schema ---------
-      const attributes = {
-        // Exact mapping from raw CSV column names to normalized keys:
-
-        // CURB_REVEAL → curbReveal
-        curbReveal: pickNumber(['CURB_REVEAL'], ['curb', 'reveal']),
-
-        // RAMP_RUNNING_SLOPE_TOTAL → rampRun (overall running slope)
-        rampRun: pickNumber(
-          ['RAMP_RUNNING_SLOPE_TOTAL'],
-          ['ramp', 'running', 'slope']
-        ),
-
-        // DWS_CONDITIONS → downSlopeCondition (down-slope conditions)
-        downSlopeCondition: pickField(
-          ['DWS_CONDITIONS'],
-          ['dws', 'conditions']
-        ),
-
-        // GUTTER_SLOPE → gutterSlope
-        gutterSlope: pickNumber(['GUTTER_SLOPE'], ['gutter', 'slope']),
-
-        // LND_WIDTH / LND_LENGTH / LND_CROSS_SLOPE → landing*
-        landingWidth: pickNumber(['LND_WIDTH'], ['lnd', 'width']),
-        landingLength: pickNumber(['LND_LENGTH'], ['lnd', 'length']),
-        landingCrossSlope: pickNumber(
-          ['LND_CROSS_SLOPE'],
-          ['lnd', 'cross', 'slope']
-        ),
-
-        // COUNTER_SLOPE → counterSlope
-        counterSlope: pickNumber(['COUNTER_SLOPE'], ['counter', 'slope']),
-
-        // RAMP_WIDTH → rampWidth
-        rampWidth: pickNumber(['RAMP_WIDTH'], ['ramp', 'width']),
-
-        // Dataset has no explicit "ramp rise" column; keep this slot in the schema as null
-        rampRise: pickNumber([], ['ramp', 'rise']),
-
-        // RAMP_LENGTH / RAMP_CROSS_SLOPE → rampLength / rampCrossSlope
-        rampLength: pickNumber(['RAMP_LENGTH'], ['ramp', 'length']),
-        rampCrossSlope: pickNumber(
-          ['RAMP_CROSS_SLOPE'],
-          ['ramp', 'cross', 'slope']
-        ),
-
-        // PONDING → ponding
-        ponding: pickField(['PONDING'], ['ponding']),
-
-        // OBSTACLES_RAMP / OBSTACLES_LANDING → obstacle / obstaclesLanding
-        obstacle: pickField(['OBSTACLES_RAMP'], ['obstacles', 'ramp']),
-        obstaclesLanding: pickField(
-          ['OBSTACLES_LANDING'],
-          ['obstacles', 'landing']
-        ),
-
-        // Extra: keep left/right flare in attributes in case we want to use them later
-        rampRightFlare: pickNumber(
-          ['RAMP_RIGHT_FLARE'],
-          ['right', 'flare']
-        ),
-        rampLeftFlare: pickNumber(
-          ['RAMP_LEFT_FLARE'],
-          ['left', 'flare']
-        )
-      };
-
-      // Normalize undefined to null so consumers can rely on null checks
-      for (const key of Object.keys(attributes)) {
-        if (attributes[key] === undefined) {
-          attributes[key] = null;
+      // Collect measurement/condition fields into an attributes subdocument.
+      // If you want a stricter schema later, you can explicitly pick known column names.
+      const attributes = {};
+      for (const k of cols) {
+        const kl = k.toLowerCase();
+        if (
+          kl.includes('curb') ||
+          kl.includes('slope') ||
+          kl.includes('width') ||
+          kl.includes('length') ||
+          kl.includes('rise') ||
+          kl.includes('ponding') ||
+          kl.includes('obstacle') ||
+          kl.includes('condition')
+        ) {
+          attributes[k] = row[k];
         }
       }
 

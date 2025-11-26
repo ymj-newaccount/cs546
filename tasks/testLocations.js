@@ -1,4 +1,8 @@
 // tasks/testLocations.js
+// Sanity check script for location-based helpers (APS and curb ramps).
+// It prints the total counts, small samples, and verifies that the
+// "nearby" queries behave sensibly.
+
 import {
   getAllAPS,
   getNearbyAPS,
@@ -9,37 +13,62 @@ import { closeConnection } from '../config/mongoConnection.js';
 
 const main = async () => {
   try {
-    console.log('All APS:');
+    // --- APS (Accessible Pedestrian Signals) ---
+
     const apsAll = await getAllAPS();
-    console.log(apsAll);
+    console.log('Total APS records:', apsAll.length);
+
+    // Only print a small sample, not the entire array.
+    console.log('First 5 APS:');
+    console.log(apsAll.slice(0, 5));
+
+    if (apsAll.length > 0) {
+      const sampleAPS = apsAll[0];
+      console.log('---');
+      console.log(
+        'APS within 100m of a sample APS location (should include that APS):'
+      );
+
+      const nearAPS = await getNearbyAPS({
+        lat: sampleAPS.location.lat,
+        lng: sampleAPS.location.lng,
+        radiusMeters: 100
+      });
+
+      // Again, only show a few results.
+      console.log(nearAPS.slice(0, 5));
+    } else {
+      console.log('No APS records found; skipping nearby APS test.');
+    }
 
     console.log('---');
 
-    console.log('APS within 100m of its own location (should find at least 1):');
-    const oneAps = apsAll[0];
-    const nearAPS = await getNearbyAPS({
-      lat: oneAps.location.lat,
-      lng: oneAps.location.lng,
-      radiusMeters: 100
-    });
-    console.log(nearAPS);
+    // --- Curb ramps ---
 
-    console.log('---');
-
-    console.log('All curb ramps:');
     const rampsAll = await getAllCurbRamps();
-    console.log(rampsAll);
+    console.log('Total curb ramp records:', rampsAll.length);
 
-    console.log('---');
+    // Only print a small sample.
+    console.log('First 5 curb ramps:');
+    console.log(rampsAll.slice(0, 5));
 
-    console.log('Curb ramps within 100m of its own location (should find at least 1):');
-    const oneRamp = rampsAll[0];
-    const nearRamps = await getNearbyCurbRamps({
-      lat: oneRamp.location.lat,
-      lng: oneRamp.location.lng,
-      radiusMeters: 100
-    });
-    console.log(nearRamps);
+    if (rampsAll.length > 0) {
+      const sampleRamp = rampsAll[0];
+      console.log('---');
+      console.log(
+        'Curb ramps within 100m of a sample ramp location (should include that ramp):'
+      );
+
+      const nearRamps = await getNearbyCurbRamps({
+        lat: sampleRamp.location.lat,
+        lng: sampleRamp.location.lng,
+        radiusMeters: 100
+      });
+
+      console.log(nearRamps.slice(0, 5));
+    } else {
+      console.log('No curb ramp records found; skipping nearby ramp test.');
+    }
   } catch (e) {
     console.error('Error in testLocations:', e);
   } finally {
