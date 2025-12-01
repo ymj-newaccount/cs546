@@ -2,11 +2,13 @@
 // Central place to register all Express routes.
 
 import adminRoutes from '../routes/admin.js';
+import exploreRoutes from '../routes/explore.js';
 
 export function registerRoutes(app) {
   // Admin dashboard (Person A responsibilities).
   app.use('/admin', adminRoutes);
-
+  //Explore Map (Person D)
+  app.use('/explore', exploreRoutes)
   // Simple home page for now.
   app.get('/', (req, res) => {
     res.send(
