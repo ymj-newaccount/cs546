@@ -1,4 +1,9 @@
 //routes explore.js
+//Refs
+//https://geojson.io/#map=0.86/25.9/17.7
+//https://geojson.org/
+//https://leafletjs.com/examples/geojson/
+
 import {Router} from 'express';
 const router = Router();
 
