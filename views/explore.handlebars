@@ -1,5 +1,50 @@
 {{!-- explore handle bars --}}
 <h1>Explore CommutAble NYC</h1>
+<p id="error" class="error" hidden></p>
+<section class="explore-layout">
+    {{!-- Filters--}}
+    <section class="explore-filters" aria-label="Map filters">
+        <h2>Filters</h2>
+        <label>
+            <input id="filter-stations" type="checkbox">
+            All Stations
+        </label>
+        <label>
+            <input id="filter-accessible" name="filter-accessible" type="checkbox">
+            Accessible Stations
+        </label>
+        <label>
+            <input id="filter-elevators" name="filter-elevators" type="checkbox">
+            Elevators
+        </label>
+        <label>
+            <input id="filter-aps" name="filter-aps" type="checkbox">
+            APS Intersections
+        </label>
+        <label>
+            <input id="filter-ramps" name="filter-ramps" type="checkbox">
+            Curb Ramps
+        </label>
+        <p id="filter-status" name="filter-status" role="status" aria-live="polite">
+            Loading map data...
+        </p>
+    </section>
+    {{!--Map--}}
+    <div id="map" class="explore-map" role="region" aria-label="Explore accessible transporation in NYC">
+    </div>
+    {{!-- List View Alternative --}}
+    <section class="list-view" aria-label="List of Locations">
+        <h2>List View</h2>
+        <p>This list provides all locations shown on the map.</p>
+        <ul id="location-list"></ul>
+    </section>
+</section>
+{{!-- Leaflet CDN--}}
+{{!--https://leafletjs.com/download.html--}}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
-<p>Explore Accessible Transporation in NYC</p>
-
+{{!--Map Code--}}
+<script src="/public/js/explore.js"></script>

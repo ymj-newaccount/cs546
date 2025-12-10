@@ -11,10 +11,7 @@ export function registerRoutes(app) {
   app.use('/explore', exploreRoutes)
   // Simple home page for now.
   app.get('/', (req, res) => {
-    res.send(
-      'CommuteAble NYC server is running. ' +
-        'Visit <a href="/admin">/admin</a> for the admin dashboard.'
-    );
+    res.redirect("/explore");
   });
 
   // Catch-all 404 handler (must be registered last).
