@@ -2,6 +2,7 @@
 
 //grab elemenets
 let mapDiv = document.getElementById('map');
+let filterStations = document.getElementById("filter-stations");
 let filterAccessible = document.getElementById("filter-accessible");
 let filterElevators = document.getElementById("filter-elevators");
 let filterAPS = document.getElementById("filter-aps");
@@ -44,6 +45,10 @@ async function refreshMap()
     }
     //parameters for checkboxes 
     let params = new URLSearchParams();
+    if(filterStations)
+    {
+        params.append("showStations", filterStations.checked);
+    }
     if(filterAccessible)
     {
         params.append("onlyAccessible", filterAccessible.checked);
@@ -102,14 +107,37 @@ async function refreshMap()
         //check if results exist
        if(geoJSON.features.length === 0)
        {
+        let showStations = filterStations && filterStations.checked;
+        let showAccessibleOnly = filterAccessible && filterAccessible.checked;
+        let showAPS = filterAPS && filterAPS.checked;
+        let showRamps = filterRamps && filterRamps.checked;
+        let showElevators = filterElevators && filterElevators.checked;
+
+        let anyFilter = showStations || showAccessibleOnly ||  showAPS || showRamps || showElevators;
+
         markersLayer.clearLayers();
-        list.innerHTML = "";
-        displayError("No locations found for selected filters.")
-         if(statusL)
+        if(list)
+        {
+            list.innerHTML = "";
+        }
+        if(anyFilter)
+        {
+            displayError("No locations found for selected filters.");
+            if(statusL)
             {
                 statusL.textContent = "No locations to display";
-                return;
             }
+        }
+        else
+        {
+            clearError();
+            if(statusL)
+            {
+                statusL.textContent = "No filters selected";
+            }
+        }
+        return;
+        
        }
        clearError();
        markersLayer.clearLayers();
@@ -152,42 +180,94 @@ function updateListView(geoJSON)
         displayError("List could not be found");
         return;
     }
+    let showStations = filterStations && filterStations.checked;
+    let showAccessibleOnly = filterAccessible && filterAccessible.checked;
+    let showAPS = filterAPS && filterAPS.checked;
+    let showRamps = filterRamps && filterRamps.checked;
+    let showElevators = filterElevators && filterElevators.checked;
+
+
+    let showStationsEffective = showStations || showAccessibleOnly || showElevators
+    let anyFilter = showStationsEffective ||  showAPS || showRamps || showElevators;
+
+    if(!anyFilter)
+    {
+        //no filters selected, clear list
+        list.innerHTML = "";
+        list.style.display = "none";
+        return;
+    }
+    else
+    {
+        list.style.display = "";
+    }
     list.innerHTML = "";
     for(let i = 0; i < geoJSON.features.length; i++)
     {
         let f = geoJSON.features[i];
         let p = f.properties;
-
         let li = document.createElement("li");
         li.tabIndex = 0;
+
         if(!p)
         {
-            li.textContent = "Unknown feature";
+            li.textContent = "Unknown Feature"
             list.appendChild(li);
             continue;
         }
+        //Stations 
         if(p.kind === "station")
         {
+            if(!showStationsEffective)
+            {
+                continue;
+            }
+           
             let routesText = "";
             if(Array.isArray(p.routes))
             {
                 routesText = p.routes.join(", ");
             }
-            else if (typeof p.routes === "string")
+            else if(typeof p.routes === "string")
             {
                 routesText = p.routes;
             }
-            li.textContent =  (p.name || "Unknown Station")+ " Routes: " + (routesText  || " N/A ")+ " Accessible: " + (p.adaStatus || "Unknown");
+            let elevatorInfo = "";
+            if(showElevators)
+            {
+                if(p.elevators && p.elevators.length > 0)
+                {
+                    elevatorInfo = " | Elevators: " + p.elevators.length;
+                }
+                else
+                {
+                    elevatorInfo = " | Elevators: None"
+                }
+            }
+            li.textContent = (p.name || "Unknown Station") +
+            " | Routes: " + (routesText || "N/A") +
+            " | Accessible: " + (p.adaStatus || "Unknown") + elevatorInfo;
         }
         else if(p.kind === "aps")
         {
-            li.textContent ="APS at " + (p.intersection || "Not available");
+            if(!showAPS)
+            {
+                continue;
+            }
+            li.textContent = "APS at " +
+            (p.intersection || "Not available");
         }
-        else if(p.kind === "ramp")
+        else if (p.kind === "ramp")
         {
-            li.textContent = "Curb ramp at: " + p.streetName + " " + (p.borough || "Unknown");
+            if(!showRamps)
+            {
+                continue;
+            }
+            li.textContent = "Curb ramp at: " +
+            p.streetName + " | " + (p.borough || "Unknown");
         }
         list.appendChild(li);
+
     }
 }
 if(mapDiv)
@@ -258,6 +338,10 @@ if(mapDiv)
     }).addTo(map);
 
     //attach event listeners
+    if(filterStations)
+    {
+        filterStations.addEventListener("change", function () {refreshMap();})
+    }
     if(filterAccessible)
     {
         filterAccessible.addEventListener("change", function () {refreshMap();})

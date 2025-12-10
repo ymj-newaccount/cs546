@@ -25,15 +25,20 @@ router.get('/api', async(req,res)=>
     try
     {
         //Load stations based off filter 
-        let stations;
-        if(req.query.onlyAccessible === "true")
+        let stations = [];
+        if(req.query.showStations === "true")
         {
-            stations = await stationData.getAccessibleStations();
-        }
-        else
-        {
+            if(req.query.onlyAccessible === "true")
+            {
+                stations = await stationData.getAccessibleStations();
+
+            }
+             else
+            {
             stations = await stationData.getAllStations();
+            }
         }
+    
         //Load elevators if elevators are selected
         let elevators = {};
         if(req.query.showElevators === "true")
