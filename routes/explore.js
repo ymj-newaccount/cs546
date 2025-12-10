@@ -75,7 +75,7 @@ router.get('/api', async(req,res)=>
                 continue;
             }
             const sid = String(s.stationId);
-            const stationElevators = elevatorData.getElevatorsByStationId[sid];
+            const stationElevators = elevators[sid] || [];
 
             const elevatorArr = [];
             for(let j = 0; j < stationElevators.length; j++)
@@ -99,7 +99,7 @@ router.get('/api', async(req,res)=>
                     stationId: sid,
                     name: s.stationName,
                     adaStatus: s.adaStatus,
-                    routes: s.routes,
+                    routes: s.routes || s.daytimeRoutes || [],
                     elevators: elevatorArr
                 }
             });
