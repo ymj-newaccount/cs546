@@ -26,7 +26,9 @@ router.get('/api', async(req,res)=>
     {
         //Load stations based off filter 
         let stations = [];
-        if(req.query.showStations === "true")
+        
+
+        if(req.query.showStations === "true" || req.query.onlyAccessible === "true" || req.query.showElevators === "true" )
         {
             if(req.query.onlyAccessible === "true")
             {
