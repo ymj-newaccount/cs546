@@ -7,7 +7,8 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "seed": "node tasks/seed.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seedReports": "node tasks/seedSampleReports.js"
   },
   "keywords": [],
   "author": "",

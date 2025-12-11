@@ -14,7 +14,7 @@ import * as locationData from '../data/locations.js';
 
 
 //GET /explore
-router.get('/' , async(req,res) =>
+router.get('/explore' , async(req,res) =>
 {
     return res.render('explore', {title: "Explore CommutAble NYC"});
 });

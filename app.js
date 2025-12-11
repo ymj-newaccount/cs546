@@ -9,6 +9,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDb } from './config/mongoConnection.js';
 import { registerRoutes } from './config/routes.js';
+import stationRoutes from "./routes/station.js";
+
 
 // Resolve __filename and __dirname in an ES module environment.
 const __filename = fileURLToPath(import.meta.url);
@@ -24,6 +26,7 @@ async function startServer() {
 
   // Static assets (CSS, client-side JS, images, etc.).
   app.use('/public', express.static(path.join(__dirname, 'public')));
+  //app.use("/", stationRoutes);
 
   // Handlebars view engine configuration.
   app.engine(

@@ -3,13 +3,19 @@
 
 import adminRoutes from '../routes/admin.js';
 import exploreRoutes from '../routes/explore.js';
+import stationRoutes from '../routes/station.js';
+import userRoutes from '../routes/home.js';
 
 export function registerRoutes(app) {
   // Admin dashboard (Person A responsibilities).
   app.use('/admin', adminRoutes);
   //Explore Map (Person D)
-  app.use('/explore', exploreRoutes)
+  app.use('/', exploreRoutes);
   // Simple home page for now.
+  app.use('/', stationRoutes);
+  // Station/:id (Person C)
+  app.use('/', userRoutes);
+  // simple user home for now
   app.get('/', (req, res) => {
     res.redirect("/explore");
   });
