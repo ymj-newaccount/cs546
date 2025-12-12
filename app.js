@@ -9,7 +9,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDb } from './config/mongoConnection.js';
 import { registerRoutes } from './config/routes.js';
-import stationRoutes from "./routes/station.js";
 
 
 // Resolve __filename and __dirname in an ES module environment.

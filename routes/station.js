@@ -38,12 +38,12 @@
 
 // export default router;
 import express from 'express';
-import { getStationById } from '../data/stations.js';
+import { getStationById, getNearbyCrossings } from '../data/stations.js';
 import { getReportsByTarget } from '../data/reports.js';
 
 const router = express.Router();
 
-router.get('/station/:id', async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const stationId = req.params.id;
     
@@ -53,16 +53,25 @@ router.get('/station/:id', async (req, res) => {
     // Get reports for this station
     const reports = await getReportsByTarget('station', stationId);
     
-    // Render the station page with the station name in the title
+    // Get nearby crossings if station has location data
+    let nearbyCrossings = [];
+    if (station.location?.lat && station.location?.lng) {
+      nearbyCrossings = await getNearbyCrossings(
+        station.location.lat,
+        station.location.lng
+      );
+    }
+    
+    // Render with station name in title
     res.render('station', {
       title: `${station.stationName} - Station Details`,
-      name: `Station - ${station.stationName}`,
+      name: station.stationName,
       stationId: station.stationId,
       adaStatus: station.adaStatus,
       adaNotes: station.adaNotes || null,
       outages: station.outages || [],
       reports: reports || [],
-      nearby: station.nearby || []
+      nearbyCrossings: nearbyCrossings
     });
     
   } catch (error) {
@@ -72,7 +81,8 @@ router.get('/station/:id', async (req, res) => {
       error: 'Station not found',
       name: 'Unknown Station',
       reports: [],
-      outages: []
+      outages: [],
+      nearbyCrossings: []
     });
   }
 });

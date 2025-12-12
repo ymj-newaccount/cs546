@@ -6,52 +6,25 @@
     border: 1px solid #b85e5e;
 }
 
-/* ===== Station Page Styles ===== */
+/* public/css/station.css */
 
-* {
-  box-sizing: border-box;
-}
-
+/* 1. Base Styles */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.6;
   color: #333;
-  background-color: #f5f5f5;
+  background: #f5f5f5;
   margin: 0;
   padding: 20px;
 }
 
-h1 {
-  font-size: 2rem;
-  margin-bottom: 1.5rem;
-  color: #1a1a1a;
-}
-
-h2 {
-  font-size: 1.5rem;
-  margin-bottom: 1rem;
+/* 2. Typography */
+h1, h2, h3 {
   color: #2c3e50;
-  border-bottom: 2px solid #3498db;
-  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
 }
 
-h3 {
-  font-size: 1.2rem;
-  margin-bottom: 0.75rem;
-  color: #34495e;
-}
-
-/* Error Message */
-.error {
-  background-color: #fee;
-  border: 1px solid #fcc;
-  color: #c33;
-  padding: 1rem;
-  border-radius: 6px;
-  margin-bottom: 1.5rem;
-}
-
-/* ===== Station Layout ===== */
+/* 3. Station Layout */
 .station-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -60,368 +33,102 @@ h3 {
   margin: 0 auto;
 }
 
-@media (max-width: 968px) {
-  .station-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ===== Station Info (Left Column) ===== */
-.station-info {
+/* 4. Card Sections */
+.station-info, .station-sidepanel {
   background: white;
   padding: 2rem;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.station-info section {
-  margin-bottom: 2rem;
-}
-
-.station-info section:last-child {
-  margin-bottom: 0;
-}
-
-/* ADA Summary */
-.ada-summary p {
-  margin: 0.5rem 0;
-}
-
-.ada-summary strong {
-  color: #27ae60;
-  font-size: 1.1rem;
-}
-
-/* Outage Summary */
-.outage-summary ul {
+/* 5. Lists */
+ul {
   list-style: none;
   padding: 0;
   margin: 0;
 }
 
-.outage-summary li {
-  padding: 0.75rem;
-  background: #fff3cd;
-  border-left: 4px solid #ffc107;
-  margin-bottom: 0.5rem;
-  border-radius: 4px;
-}
-
-.no-outages {
-  color: #27ae60;
-  font-style: italic;
-}
-
-/* Nearby Crossings */
-.nearby-crossings em {
-  color: #7f8c8d;
-}
-
-/* ===== Station Sidepanel (Right Column) ===== */
-.station-sidepanel {
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-/* ===== Community Reports Section ===== */
-.community-reports h2 {
-  margin-top: 0;
-}
-
-/* Report Form */
+/* 6. Report Form */
 .report-form {
   background: #f8f9fa;
   padding: 1.5rem;
   border-radius: 8px;
   margin-bottom: 2rem;
-  border: 1px solid #dee2e6;
 }
 
-.report-form h3 {
-  margin-top: 0;
-}
-
+/* 7. Form Inputs */
 .report-form textarea {
   width: 100%;
   padding: 0.75rem;
   border: 1px solid #ced4da;
   border-radius: 6px;
   font-family: inherit;
-  font-size: 0.95rem;
   resize: vertical;
   margin-bottom: 1rem;
 }
 
-.report-form textarea:focus {
-  outline: none;
-  border-color: #3498db;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
-}
-
-.report-form label {
-  display: block;
-  margin-bottom: 1rem;
-  font-weight: 500;
-  color: #495057;
-}
-
-.report-form input[type="file"] {
-  display: block;
-  margin-top: 0.5rem;
-  font-size: 0.9rem;
-}
-
-.report-form button[type="submit"] {
+/* 8. Buttons */
+button {
   background: #3498db;
   color: white;
   border: none;
-  padding: 0.75rem 2rem;
+  padding: 0.75rem 1.5rem;
   border-radius: 6px;
-  font-size: 1rem;
-  font-weight: 600;
   cursor: pointer;
+  font-size: 0.9rem;
   transition: background 0.2s;
 }
 
-.report-form button[type="submit"]:hover {
+/* 9. Button Hover */
+button:hover {
   background: #2980b9;
 }
 
-.report-form button[type="submit"]:disabled {
-  background: #95a5a6;
-  cursor: not-allowed;
-}
-
-/* Image Preview */
-#image-preview {
-  margin-top: 1rem;
-}
-
-#image-preview img {
-  border: 2px solid #dee2e6;
-}
-
-.remove-preview {
-  background: #e74c3c;
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  font-size: 0.85rem;
-  cursor: pointer;
-  margin-top: 0.5rem;
-}
-
-.remove-preview:hover {
-  background: #c0392b;
-}
-
-/* Reports List */
-.reports-list ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.reports-list li {
-  margin-bottom: 1.5rem;
-}
-
-.no-reports {
-  text-align: center;
-  color: #7f8c8d;
-  font-style: italic;
-  padding: 2rem;
-  background: #f8f9fa;
-  border-radius: 6px;
-}
-
-/* Individual Report */
+/* 10. Individual Reports */
 .report {
   background: #f8f9fa;
   padding: 1.5rem;
   border-radius: 8px;
-  border: 1px solid #dee2e6;
-  transition: box-shadow 0.2s;
-}
-
-.report:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-/* Report Status Colors */
-.report-open {
+  margin-bottom: 1.5rem;
   border-left: 4px solid #3498db;
 }
 
-.report-verified {
-  border-left: 4px solid #27ae60;
-}
-
-.report-resolved {
-  border-left: 4px solid #95a5a6;
-  opacity: 0.8;
-}
-
-.report-disputed {
-  border-left: 4px solid #e74c3c;
-}
-
-.report-text {
-  margin: 0 0 1rem 0;
-  font-size: 1rem;
-  line-height: 1.5;
-}
-
+/* 11. Report Images */
 .report-photo {
   max-width: 100%;
-  height: auto;
   border-radius: 6px;
-  margin-bottom: 1rem;
-  border: 1px solid #dee2e6;
+  margin: 1rem 0;
 }
 
-/* Report Meta */
+/* 12. Report Meta Info */
 .report-meta {
   display: flex;
-  gap: 1.5rem;
+  gap: 1rem;
   flex-wrap: wrap;
   font-size: 0.9rem;
   color: #6c757d;
-  margin-bottom: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #dee2e6;
+  margin: 1rem 0;
 }
 
-.votes {
-  font-weight: 600;
-}
-
-.trust-score {
-  color: #3498db;
-  font-weight: 700;
-}
-
-.report-status {
-  text-transform: capitalize;
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
-  background: #e9ecef;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.report-time {
-  font-style: italic;
-}
-
-.duplicate-flag {
-  background: #fff3cd;
-  color: #856404;
-  padding: 0.5rem 0.75rem;
-  border-radius: 4px;
-  margin-bottom: 1rem;
-  border: 1px solid #ffeaa7;
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
-/* Report Actions */
-.report-actions {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.vote-btn {
+/* 13. Vote Buttons */
+.vote-btn, .flag-duplicate-btn {
   background: white;
   border: 1px solid #ced4da;
+  color: #333;
   padding: 0.5rem 1rem;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s;
+  margin-right: 0.5rem;
 }
 
-.vote-btn:hover {
-  background: #f8f9fa;
-  border-color: #3498db;
-  transform: translateY(-1px);
-}
-
-.vote-btn.voted {
-  background: #3498db;
-  color: white;
-  border-color: #3498db;
-}
-
-.flag-duplicate-btn {
-  background: white;
-  border: 1px solid #e74c3c;
-  color: #e74c3c;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.flag-duplicate-btn:hover {
-  background: #e74c3c;
-  color: white;
-}
-
-.flag-duplicate-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* ===== Notification ===== */
-@keyframes slideIn {
-  from {
-    transform: translateX(400px);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-@keyframes slideOut {
-  from {
-    transform: translateX(0);
-    opacity: 1;
-  }
-  to {
-    transform: translateX(400px);
-    opacity: 0;
-  }
-}
-
+/* 14. Notifications */
 .notification {
   position: fixed;
   top: 20px;
   right: 20px;
-  padding: 16px 24px;
+  padding: 1rem 1.5rem;
   border-radius: 8px;
   color: white;
-  font-weight: 500;
+  background: #3498db;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 1000;
-  max-width: 400px;
 }
 
-.notification-success {
-  background: #27ae60;
-}
-
-.notification-error {
-  background: #e74c3c;
-}
-
-.notification-info {
-  background: #3498db;
-}

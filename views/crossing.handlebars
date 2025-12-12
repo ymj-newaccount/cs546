@@ -7,49 +7,50 @@
   <link rel="stylesheet" href="/public/css/station.css">
 </head>
 <body>
-  <h1>{{name}}</h1>
+  <h1>{{address}}</h1>
 
   {{#if error}}
     <div class="error">{{error}}</div>
   {{/if}}
 
   <section class="station-layout">
-      {{!-- Left Column: Station Details --}}
-      <section class="station-info" aria-label="Station Information">
-          <h2>Station Information</h2>
+      {{!-- Left Column: Crossing Details --}}
+      <section class="station-info" aria-label="Crossing Information">
+          <h2>Crossing Information</h2>
 
           <section class="ada-summary">
-              <h3>ADA Summary</h3>
-              <p>Status: <strong>{{adaStatus}}</strong></p>
-              {{#if adaNotes}}
-                <p>{{adaNotes}}</p>
+              <h3>Location Details</h3>
+              <p><strong>Address:</strong> {{address}}</p>
+              <p><strong>Borough:</strong> {{borough}}</p>
+              <p><strong>APS ID:</strong> {{apsId}}</p>
+              {{#if installDate}}
+                <p><strong>Install Date:</strong> {{installDate}}</p>
               {{/if}}
+              <p><strong>Coordinates:</strong> {{lat}}, {{lng}}</p>
           </section>
 
           <section class="outage-summary">
-              <h3>Historical Outage Summary</h3>
-              <ul>
-                  {{#each outages}}
-                      <li>{{this.date}} - {{this.description}}</li>
-                  {{/each}}
-              </ul>
-          </section>
-
-          <section class="nearby-crossings">
-              <h3>Nearby Crossings</h3>
-              {{#if nearbyCrossings.length}}
+              <h3>Nearby Curb Ramps</h3>
+              {{#if nearbyCurbRamps.length}}
                 <ul>
-                    {{#each nearbyCrossings}}
+                    {{#each nearbyCurbRamps}}
                         <li>
-                            <a href="/crossing/{{this.apsId}}">{{this.address}}</a>
+                            <strong>{{this.attributes.streetName}}</strong>
+                            <br>
+                            Condition: <span class="condition-{{this.attributes.downSlopeCondition}}">{{this.attributes.downSlopeCondition}}</span>
                             <br>
                             <small>Distance: {{this.distance}} km</small>
                         </li>
                     {{/each}}
                 </ul>
               {{else}}
-                <p class="no-outages">No crossings found nearby.</p>
+                <p class="no-outages">No curb ramps found nearby.</p>
               {{/if}}
+          </section>
+
+          <section class="nearby-crossings">
+              <h3>Additional Features</h3>
+              <p><em>Coming soon...</em></p>
           </section>
       </section>
 
@@ -58,7 +59,27 @@
           <section class="community-reports">
               <h2>Community Reports</h2>
               
-                {{!-- List of Reports --}}
+              {{!-- Report Submission Form --}}
+              <form id="report-form" class="report-form">
+                  <h3>Submit a Report</h3>
+                  <textarea 
+                      name="reportText" 
+                      placeholder="Describe the accessibility issue at this crossing (e.g., APS not working, signal timing issues, etc.)..." 
+                      required
+                      minlength="10"
+                      maxlength="500"
+                      rows="4"
+                  ></textarea>
+                  
+                  <label for="report-photo">
+                      Photo (optional):
+                      <input type="file" id="report-photo" name="photo" accept="image/*">
+                  </label>
+
+                  <button type="submit">Submit Report</button>
+              </form>
+
+              {{!-- List of Reports --}}
               <div class="reports-list">
                   {{#if reports.length}}
                       <ul>
@@ -90,33 +111,11 @@
                       <p class="no-reports">No reports yet. Be the first to report an accessibility issue!</p>
                   {{/if}}
               </div>
-
-              {{!-- Report Submission Form --}}
-              <form id="report-form" class="report-form">
-                  <h3>Submit a Report</h3>
-                  <textarea 
-                      name="reportText" 
-                      placeholder="Describe the accessibility issue (e.g., elevator out of service, broken ramp, etc.)..." 
-                      required
-                      minlength="10"
-                      maxlength="500"
-                      rows="4"
-                  ></textarea>
-                  
-                  <label for="report-photo">
-                      Photo (optional):
-                      <input type="file" id="report-photo" name="photo" accept="image/*">
-                  </label>
-
-                  <button type="submit">Submit Report</button>
-              </form>
-
-              
           </section>
       </section>
   </section>
 
-  {{!-- Station JS --}}
-  <script src="/public/js/station.js"></script>
+  {{!-- Crossing JS --}}
+  <script src="/public/js/crossing.js"></script>
 </body>
 </html>

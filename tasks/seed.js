@@ -230,7 +230,7 @@ function buildElevatorDocs(csvRows) {
       const ym = isoDate.slice(0, 7); // "YYYY-MM"
 
       // 4. Availability: try several possible columns
-      //    (some are stored as 0–1 fractions, some as percentages).
+      //    (some are stored as 01 fractions, some as percentages).
       let availabilityPct =
         toNumber(
           row['24-Hour Availability'] ??
@@ -242,7 +242,7 @@ function buildElevatorDocs(csvRows) {
             row['Percent of time in service']
         );
 
-      // If it looks like a 0–1 fraction, convert to a percentage
+      // If it looks like a 01 fraction, convert to a percentage
       if (availabilityPct !== null && availabilityPct <= 1) {
         availabilityPct = availabilityPct * 100;
       }
@@ -259,7 +259,7 @@ function buildElevatorDocs(csvRows) {
         equipmentId: String(equipmentId),
         borough,
         // Most stationId values will be null; we can backfill later
-        // if we build an Equipment → Station mapping.
+        // if we build an Equipment  Station mapping.
         stationId: stationId ? String(stationId) : null,
         status,
         lastUpdated: isoDate
