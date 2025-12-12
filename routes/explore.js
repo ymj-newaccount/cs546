@@ -4,7 +4,7 @@
 //https://geojson.org/
 //https://leafletjs.com/examples/geojson/
 
-import {Router} from 'express';
+import e, {Router} from 'express';
 const router = Router();
 
 //import helpers
@@ -24,11 +24,77 @@ router.get('/api', async(req,res)=>
 {
     try
     {
+        //input validation 
+        if(!req.query.showStations)
+        {
+            return res.status(400).json({error: "Missing parameter: showStations."});
+        }
+        if(Array.isArray(req.query.showStations))
+        {
+            return res.status(400).json({error: "showStations must only appear once."});
+        }
+        if(req.query.showStations !== "true" && req.query.showStations !== "false")
+        {
+            return res.status(400).json({error: "showStations must be true or false."});
+        }
+
+        if(!req.query.onlyAccessible)
+        {
+            return res.status(400).json({error: "Missing parameter: onlyAccessible."});
+        }
+        if(Array.isArray(req.query.onlyAccessible))
+        {
+            return res.status(400).json({error: "onlyAccessible must only appear once."});
+        }
+        if(req.query.onlyAccessible !== "true" && req.query.onlyAccessible!== "false")
+        {
+            return res.status(400).json({error: "onlyAccessible must be true or false."});
+        }
+
+        if(!req.query.showElevators)
+        {
+            return res.status(400).json({error: "Missing parameter: showElevators."});
+        }
+        if(Array.isArray(req.query.showElevators))
+        {
+            return res.status(400).json({error: "showElevators must only appear once."});
+        }
+        if(req.query.showElevators !== "true" && req.query.showElevators!== "false")
+        {
+            return res.status(400).json({error: "showElevators must be true or false."});
+        }
+
+        if(!req.query.showAPS)
+        {
+            return res.status(400).json({error: "Missing parameter: showAPS."});
+        }
+        if(Array.isArray(req.query.showAPS))
+        {
+            return res.status(400).json({error: "showAPS must only appear once."});
+        }
+        if(req.query.showAPS !== "true" && req.query.showAPS !== "false")
+        {
+            return res.status(400).json({error: "showAPS must be true or false."});
+        }
+
+        if(!req.query.showRamps)
+        {
+            return res.status(400).json({error: "Missing parameter: showRamps."});
+        }
+        if(Array.isArray(req.query.showRamps))
+        {
+            return res.status(400).json({error: "showRamps must only appear once."});
+        }
+        if(req.query.showRamps !== "true" && req.query.showRamps !== "false")
+        {
+            return res.status(400).json({error: "showRamps must be true or false."});
+        }
+
         //Load stations based off filter 
         let stations = [];
         
 
-        if(req.query.showStations === "true" || req.query.onlyAccessible === "true" || req.query.showElevators === "true" )
+        if(req.query.showStations === "true" || req.query.onlyAccessible === "true")
         {
             if(req.query.onlyAccessible === "true")
             {
@@ -42,17 +108,16 @@ router.get('/api', async(req,res)=>
         }
     
         //Load elevators if elevators are selected
-        let elevators = {};
+        let elevatorList = [];
         if(req.query.showElevators === "true")
         {
-            for(let i = 0; i < stations.length; i++)
+            elevatorList = await elevatorData.getAllElevators();
+            const MAX_EL = 1500;
+            if(elevatorList.length > MAX_EL)
             {
-                let s = stations[i];
-                const sid = String(s.stationId);
-
-                const eles = await elevatorData.getElevatorsByStationId(sid);
-                elevators[sid] = eles;
+                elevatorList = elevatorList.slice(0, MAX_EL);
             }
+            
         }
         //Load APS + Curb Ramps
         let apsList = [];
@@ -87,18 +152,7 @@ router.get('/api', async(req,res)=>
                 continue;
             }
             const sid = String(s.stationId);
-            const stationElevators = elevators[sid] || [];
 
-            const elevatorArr = [];
-            for(let j = 0; j < stationElevators.length; j++)
-            {
-                const e = stationElevators[j];
-                elevatorArr.push({
-                    elevatorId: e.elevatorId,
-                    status: e.status,
-                    lastUpdated: e.lastUpdated
-                });
-            }
             features.push({
                 type: "Feature",
                 geometry: {
@@ -112,7 +166,38 @@ router.get('/api', async(req,res)=>
                     name: s.stationName,
                     adaStatus: s.adaStatus,
                     routes: s.routes || s.daytimeRoutes || [],
-                    elevators: elevatorArr
+                    
+                }
+            });
+        }
+        //Elevator
+        for(let i = 0; i < elevatorList.length; i++)
+        {
+            let ev = elevatorList[i];
+            if(!ev.location)
+            {
+                continue;
+            }
+            let lat = ev.location.lat;
+            let lng = ev.location.lng;
+            if(lat === null || lng === null)
+            {
+                continue;
+            }
+            features.push({
+                type: "Feature",
+                geometry: {
+                    type: "Point",
+                    coordinates: [lng,lat]
+                },
+                properties:
+                {
+                    kind: "elevator",
+                    elevatorId: ev.elevatorId,
+                    equipmentId: ev.equipmentId,
+                    borough: ev.borough,
+                    status: ev.status,
+                    lastUpdated: ev.lastUpdated
                 }
             });
         }

@@ -187,7 +187,7 @@ function updateListView(geoJSON)
     let showElevators = filterElevators && filterElevators.checked;
 
 
-    let showStationsEffective = showStations || showAccessibleOnly || showElevators
+    let showStationsEffective = showStations || showAccessibleOnly;
     let anyFilter = showStationsEffective ||  showAPS || showRamps || showElevators;
 
     if(!anyFilter)
@@ -232,22 +232,23 @@ function updateListView(geoJSON)
             {
                 routesText = p.routes;
             }
-            let elevatorInfo = "";
-            if(showElevators)
-            {
-                if(p.elevators && p.elevators.length > 0)
-                {
-                    elevatorInfo = " | Elevators: " + p.elevators.length;
-                }
-                else
-                {
-                    elevatorInfo = " | Elevators: None"
-                }
-            }
-            li.textContent = (p.name || "Unknown Station") +
-            " | Routes: " + (routesText || "N/A") +
-            " | Accessible: " + (p.adaStatus || "Unknown") + elevatorInfo;
+            li.textContent = 
+            (p.name || "Unknown Station")  +
+            " | Routes: " + (routesText || "None") +
+            " | Accessible " + (p.adaStatus || "Unknown");
         }
+        //Elevator
+        else if(p.kind === "elevator")
+        {
+            if(!showElevators)
+            {
+                continue;
+            }
+            li.textContent = "Elevator " +(p.elevatorId || "Not Available") +
+            " | Borough: " + (p.borough || "Not Available") +
+            " | Status: " + (p.status || "Not Available");
+        }
+        //APS
         else if(p.kind === "aps")
         {
             if(!showAPS)
@@ -257,6 +258,7 @@ function updateListView(geoJSON)
             li.textContent = "APS at " +
             (p.intersection || "Not available");
         }
+        //RAMP
         else if (p.kind === "ramp")
         {
             if(!showRamps)
@@ -301,19 +303,18 @@ if(mapDiv)
                 "Accessible: " + p.adaStatus + "<br>" +
                 "Routes: " + routesText + "<br>";
                 
-                //Elevators if checked
-                if(p.elevators && p.elevators.length > 0)
-                {
-                    popupText += "Elevators:<br>";
-                    for(let i = 0; i < p.elevators.length; i++)
-                    {
-                        let e = p.elevators[i];
-                        popupText += "ID" + e.elevatorId + "<br>" +  
-                        "Status: " + e.status + "<br>" +
-                        "Last Updated: " + (e.lastUpdated  || "No timestamp available" ) +"<br>";
-                }
+            
             }
-        }
+            else if(p.kind === "elevator")
+            {
+                popupText = 
+                "Elevator " + (p.elevatorId || "Unknown") + "<br>" +
+                "Equipment ID: " + (p.equipmentId || "None") + "<br>" +
+                "Borough: " + (p.borough || "Not available") +"<br>" +
+                "Status: " + (p.status || "None") + "<br>" +
+                "Last Updated: " +(p.lastUpdated || "None") + "<br>";
+
+                }
             else if(p.kind === "aps")
             {
                 popupText = "Accessible Pedestrian Signal (APS) <br>" +
