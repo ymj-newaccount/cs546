@@ -64,6 +64,11 @@ router.get('/api', async(req,res)=>
         if(req.query.showRamps === "true")
         {
             rampList = await locationData.getAllCurbRamps();
+            const MAX_RAMPS = 1500;
+            if(rampList.length > MAX_RAMPS)
+            {
+                rampList = rampList.slice(0, MAX_RAMPS);
+            }
         }
         //Build GeoJSON FeatureCollection 
         const features = [];
