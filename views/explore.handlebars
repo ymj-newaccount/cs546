@@ -137,7 +137,12 @@
   <section class="list-view" aria-label="List of locations">
     <h2>List View</h2>
     <p>This list provides all locations shown on the map.</p>
-    <ul id="location-list"></ul>
+    <ol id="location-list" class="location-list"></ol>
+    <nav class="list-pager" aria-label="list paging">
+      <button type="button" id="list-prev" class="btn btn-ghost" aria-label="Previous Page">←</button>
+      <span id="list-page" class="list-page" aria-live="polite">Page 1</span>
+      <button type="button" id="list-next" class="btn btn-ghost" aria-label="Next Page">→</button>
+    </nav>
 
     <hr>
 

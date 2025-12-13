@@ -67,10 +67,16 @@
   {{!-- -------------------------
        Station summary
   -------------------------- --}}
-  <section aria-labelledby="station-summary-title">
+  <section aria-labelledby="station-summary-title" class="station-summary">
     <h2 id="station-summary-title">Station summary</h2>
 
-    <dl>
+    <div class="station-summary-grid">
+        {{!-- -------------------------
+       Panel 1: Station Details
+  -------------------------- --}}
+    <section class="panel detail-card" aria-label="Details">
+    <h3 class="detail-title">Details</h3>
+    <dl class="detail-dl">
       <dt>Station ID</dt>
       <dd>{{stationId}}</dd>
 
@@ -82,7 +88,15 @@
 
       <dt>Line</dt>
       <dd>{{#if station.line}}{{station.line}}{{else}}Not available{{/if}}</dd>
+      </dl>
+    </section>
 
+ {{!-- -------------------------
+       Panel 1: Accessibility
+  -------------------------- --}}
+<section class="panel detail-card" aria-label= "Accessibility">
+  <h3 class="info-title"> Accessibility</h3>
+  <dl class="detail-dl">
       <dt>ADA status</dt>
       <dd>{{#if station.adaStatus}}{{station.adaStatus}}{{else}}Unknown{{/if}}</dd>
 
@@ -100,6 +114,15 @@
           None listed
         {{/if}}
       </dd>
+    </dl>
+</section>
+
+ {{!-- -------------------------
+       Panel 3: Location + Follow Station
+  -------------------------- --}}
+<section class="panel detail-card" aria-label="Location">
+  <h3 class="detail-title">Location</h3>
+  <dl class="detail-dl">
       <dt>Coordinates</dt>
       <dd>
         {{#if hasCoords}}
@@ -108,10 +131,10 @@
           Not available
         {{/if}}
       </dd>
-    </dl>
+      </dl>
 
+<div class="detail-actions">
     {{!-- Follow/Unfollow (AJAX) --}}
-    <section aria-label="Follow station" style="margin-top:10px;">
       {{#if user}}
         <button
           id="follow-toggle"
@@ -129,7 +152,9 @@
           <a href="/login">Login</a>
         </p>
       {{/if}}
-    </section>
+    </div>
+  </section>
+  </div>
   </section>
 
   <hr>
@@ -137,7 +162,7 @@
   {{!-- -------------------------
        Elevators at this station
   -------------------------- --}}
-  <section aria-labelledby="elevators-title">
+  <section aria-labelledby="elevators-title" class="panel section-panel">
     <h2 id="elevators-title">Elevators</h2>
 
     {{#if hasElevators}}
@@ -177,7 +202,7 @@
        Nearby APS + curb ramps
        Note: Use hasCoords to avoid showing the "nearby radius" text when coordinates are missing/invalid.
   -------------------------- --}}
-  <section aria-labelledby="nearby-title">
+  <section aria-labelledby="nearby-title" class="panel section-panel">
     <h2 id="nearby-title">Nearby accessibility features</h2>
 
     {{#if hasCoords}}
@@ -252,7 +277,7 @@
   {{!-- -------------------------
        Community reports (existing + submit new)
   -------------------------- --}}
-  <section aria-labelledby="reports-title">
+  <section aria-labelledby="reports-title" class="panel section-panel">
     <h2 id="reports-title">Community reports</h2>
 
     {{!-- Existing reports --}}

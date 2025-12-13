@@ -50,6 +50,60 @@ const welcomeCloseXBtn = document.getElementById('welcome-close-x');
 const csrfToken =
   document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
+//Multiple pages 
+const prevBtn = document.getElementById("list-prev");
+const nextBtn = document.getElementById("list-next");
+const pageLabel = document.getElementById("list-page");
+
+const PAGE_SIZE = 10;
+let listMods = [];
+let currentPage = 1;
+
+function renderListPage()
+{
+  if(!list)
+  {
+    return;
+  }
+
+  const total = listMods.length;
+  const totalPages = Math.max(1, Math.ceil(total/PAGE_SIZE));
+  currentPage = Math.min(Math.max(1,currentPage), totalPages);
+
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = listMods.slice(start, start + PAGE_SIZE);
+
+  list.innerHTML = "";
+
+  if(list.tagName === "OL")
+  {
+    list.start = start + 1;
+  }
+  for(let i = 0; i < pageItems.length; i++)
+  {
+    list.appendChild(pageItems[i]);
+  }
+  if(prevBtn)
+  {
+    prevBtn.disabled = currentPage === 1;
+  }
+  if(nextBtn)
+  {
+    nextBtn.disabled = currentPage === totalPages;
+  }
+  if(pageLabel)
+  {
+    pageLabel.textContent = `Page ${currentPage}`;
+  }
+}
+
+function setListMods(newMods)
+{
+  listMods = newMods || [];
+  currentPage = 1;
+  renderListPage();
+}
+
 // Follow/unfollow initial state (bookmarks) injected by explore.handlebars
 const bookmarksJsonEl = document.getElementById('bookmarks-json');
 let bookmarkedStations = new Set();
@@ -342,7 +396,7 @@ async function refreshMap() {
       const anyFilter = showStationsEffective || apsChecked || rampsChecked || elevatorsChecked;
 
       if (markersLayer) markersLayer.clearLayers();
-      if (list) list.innerHTML = '';
+      setListMods([]);
 
       if (anyFilter) {
         displayError(
@@ -411,7 +465,8 @@ function updateListView(geoJSON) {
     list.style.display = '';
   }
 
-  list.innerHTML = '';
+ const mods = [];
+
 
   for (let i = 0; i < geoJSON.features.length; i++) {
     const f = geoJSON.features[i];
@@ -422,7 +477,7 @@ function updateListView(geoJSON) {
     if (!p) {
       li.textContent = 'Unknown Feature';
       li.tabIndex = 0;
-      list.appendChild(li);
+      mods.push(li);
       continue;
     }
 
@@ -456,7 +511,7 @@ function updateListView(geoJSON) {
         )
       );
 
-      list.appendChild(li);
+      mods.push(li);
       continue;
     }
 
@@ -480,7 +535,7 @@ function updateListView(geoJSON) {
         risk;
 
       li.tabIndex = 0;
-      list.appendChild(li);
+      mods.push(li);
       continue;
     }
 
@@ -501,7 +556,7 @@ function updateListView(geoJSON) {
         li.tabIndex = 0;
       }
 
-      list.appendChild(li);
+      mods.push(li);
       continue;
     }
 
@@ -526,14 +581,15 @@ function updateListView(geoJSON) {
         li.tabIndex = 0;
       }
 
-      list.appendChild(li);
+      mods.push(li);
       continue;
     }
 
     li.textContent = 'Unknown Feature';
     li.tabIndex = 0;
-    list.appendChild(li);
+    mods.push(li);
   }
+  setListMods(mods);
 }
 
 // -------------------- Leaflet Init + Popups --------------------
@@ -786,7 +842,15 @@ document.addEventListener(
   },
   true
 );
-
+//Connect the buttons 
+if(prevBtn)
+{
+  prevBtn.addEventListener("click", () => { currentPage--; renderListPage();});
+}
+if(nextBtn)
+{
+  nextBtn.addEventListener("click", () => { currentPage++; renderListPage();});
+}
 // -------------------- Report Submit --------------------
 
 if (reportCancel) {

@@ -1,13 +1,15 @@
+<div class="auth-layout">
+  <div class="panel auth-card">
 <h1>Login</h1>
 
 {{#if error}}
   <p class="error" role="alert">Error: {{error}}</p>
 {{/if}}
 
-<form method="post" action="/login">
+<form method="post" action="/login" class="auth-form">
   <input type="hidden" name="csrfToken" value="{{csrfToken}}">
 
-  <div>
+  <div class="field">
     <label for="username">Username</label>
     <input
       id="username"
@@ -19,7 +21,7 @@
     >
   </div>
 
-  <div>
+  <div class="field">
     <label for="password">Password</label>
     <input
       id="password"
@@ -30,7 +32,9 @@
     >
   </div>
 
-  <button type="submit">Login</button>
+  <button type="submit" class="btn btn-primary auth-submit">Login</button>
 </form>
 
-<p>No account yet? <a href="/register">Register</a></p>
+<p class="auth-footer">No account yet? <a href="/register">Register</a></p>
+  </div>
+</div>

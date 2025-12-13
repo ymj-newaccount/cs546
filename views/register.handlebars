@@ -1,13 +1,16 @@
+
+<div class="auth-layout">
+  <div class="panel auth-card">
 <h1>Register</h1>
 
 {{#if error}}
   <p class="error" role="alert">Error: {{error}}</p>
 {{/if}}
 
-<form method="post" action="/register">
+<form method="post" action="/register" class="auth-form">
   <input type="hidden" name="csrfToken" value="{{csrfToken}}">
 
-  <div>
+  <div class="field">
     <label for="username">Username</label>
     <input
       id="username"
@@ -23,7 +26,7 @@
     <p class="hint">3–30 characters. Letters, numbers, and underscore only.</p>
   </div>
 
-  <div>
+  <div class="field">
     <label for="email">Email</label>
     <input
       id="email"
@@ -36,7 +39,7 @@
     >
   </div>
 
-  <div>
+  <div class="field">
     <label for="password">Password</label>
     <input
       id="password"
@@ -48,7 +51,7 @@
     >
   </div>
 
-  <div>
+  <div class="field">
     <label for="confirmPassword">Confirm Password</label>
     <input
       id="confirmPassword"
@@ -60,7 +63,11 @@
     >
   </div>
 
-  <button type="submit">Create Account</button>
+  <button type="submit" class="btn btn-primary auth-submit">Create Account</button>
 </form>
 
-<p>Already have an account? <a href="/login">Login</a></p>
+<p class="auth-footer">Already have an account? <a href="/login">Login</a></p>
+   </div>
+</div>
+
+
