@@ -4,20 +4,28 @@
   "type": "module",
   "main": "app.js",
   "scripts": {
+    "prestart": "node scripts/checkNode.js",
+    "predev": "node scripts/checkNode.js",
+    "preseed": "node scripts/checkNode.js",
     "start": "node app.js",
     "dev": "nodemon app.js",
     "seed": "node tasks/seed.js",
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "csv-parse": "^6.1.0",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-handlebars": "^8.0.1",
+    "express-session": "^1.18.2",
     "mongodb": "^7.0.0",
     "node-fetch": "^3.3.2"
   },

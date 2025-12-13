@@ -1,0 +1,66 @@
+<h1>Register</h1>
+
+{{#if error}}
+  <p class="error" role="alert">Error: {{error}}</p>
+{{/if}}
+
+<form method="post" action="/register">
+  <input type="hidden" name="csrfToken" value="{{csrfToken}}">
+
+  <div>
+    <label for="username">Username</label>
+    <input
+      id="username"
+      type="text"
+      name="username"
+      value="{{username}}"
+      required
+      minlength="3"
+      maxlength="30"
+      pattern="[A-Za-z0-9_]+"
+      autocomplete="username"
+    >
+    <p class="hint">3–30 characters. Letters, numbers, and underscore only.</p>
+  </div>
+
+  <div>
+    <label for="email">Email</label>
+    <input
+      id="email"
+      type="email"
+      name="email"
+      value="{{email}}"
+      required
+      maxlength="254"
+      autocomplete="email"
+    >
+  </div>
+
+  <div>
+    <label for="password">Password</label>
+    <input
+      id="password"
+      type="password"
+      name="password"
+      required
+      minlength="8"
+      autocomplete="new-password"
+    >
+  </div>
+
+  <div>
+    <label for="confirmPassword">Confirm Password</label>
+    <input
+      id="confirmPassword"
+      type="password"
+      name="confirmPassword"
+      required
+      minlength="8"
+      autocomplete="new-password"
+    >
+  </div>
+
+  <button type="submit">Create Account</button>
+</form>
+
+<p>Already have an account? <a href="/login">Login</a></p>

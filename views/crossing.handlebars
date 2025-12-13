@@ -1,0 +1,504 @@
+{{!-- views/crossing.handlebars
+     Crossing detail page (GET /crossing/:id)
+
+     Inputs (from routes/crossingPage.js):
+       - id (string)               // the requested crossing id
+       - kind ("aps" | "ramp")     // resolved type (APS preferred if collision)
+       - aps (object|null)         // APS record if found
+       - ramp (object|null)        // Ramp record if found
+       - hasCoords (boolean)
+       - nearbyAPS, hasNearbyAPS
+       - nearbyRamps, hasNearbyRamps
+       - reports, hasReports
+       - reportTargetType, reportTargetId
+
+     Globals (from middleware / layout):
+       - user (null or { _id, username, ... })
+       - csrfToken (string) for server-side forms (logout)
+       - <meta name="csrf-token" ...> exists in main layout for AJAX
+--}}
+
+<header class="page-title-bar">
+  <h1>
+    Crossing Details
+    {{!-- Prefer a human label if possible --}}
+    {{#if aps}}
+      {{#if aps.location}}
+        {{#if aps.location.address}}
+          — APS at {{aps.location.address}}
+        {{else}}
+          — APS {{id}}
+        {{/if}}
+      {{else}}
+        — APS {{id}}
+      {{/if}}
+    {{else}}
+      {{#if ramp.streetName}}
+        — Curb Ramp at {{ramp.streetName}}
+      {{else}}
+        — Ramp {{id}}
+      {{/if}}
+    {{/if}}
+  </h1>
+
+  {{!-- Theme toggle (theme.js looks for #theme-toggle) --}}
+  <label class="theme-switch">
+    <input id="theme-toggle" type="checkbox" aria-label="Toggle dark mode">
+    <span class="switch-ui" aria-hidden="true"></span>
+    <span class="switch-text">Night mode</span>
+  </label>
+</header>
+
+{{!-- Hidden label used by JS to populate the default report target label --}}
+<span id="crossing-label" hidden>
+  {{#if aps}}
+    {{#if aps.location}}
+      {{#if aps.location.address}}APS at {{aps.location.address}}{{else}}APS {{id}}{{/if}}
+    {{else}}
+      APS {{id}}
+    {{/if}}
+  {{else}}
+    {{#if ramp.streetName}}Curb ramp at {{ramp.streetName}}{{else}}Ramp {{id}}{{/if}}
+  {{/if}}
+</span>
+
+{{#if user}}
+  <p>Signed in as <strong>{{user.username}}</strong></p>
+
+  <nav class="auth-actions" aria-label="Account actions">
+    <a class="btn btn-ghost" href="/explore">Back to Explore</a>
+    <a class="btn btn-ghost" href="/dashboard">Dashboard</a>
+
+    {{!-- Logout is POST; include CSRF --}}
+    <form method="post" action="/logout" style="display:inline;">
+      <input type="hidden" name="csrfToken" value="{{csrfToken}}">
+      <button type="submit" class="btn btn-primary">Logout</button>
+    </form>
+  </nav>
+{{else}}
+  <nav class="auth-actions" aria-label="Authentication">
+    <a class="btn btn-ghost" href="/register">Register</a>
+    <a class="btn btn-primary" href="/login">Login</a>
+    <a class="btn btn-ghost" href="/explore">Back to Explore</a>
+  </nav>
+{{/if}}
+
+{{!-- Page-level error/status message (used by inline JS below) --}}
+<p id="page-error" class="error" hidden role="alert" aria-live="assertive"></p>
+
+<main style="padding:12px;">
+  {{!-- -------------------------
+       Crossing summary
+  -------------------------- --}}
+  <section aria-labelledby="crossing-summary-title">
+    <h2 id="crossing-summary-title">Crossing summary</h2>
+
+    <dl>
+      <dt>Type</dt>
+      <dd>{{kind}}</dd>
+
+      <dt>ID</dt>
+      <dd>{{id}}</dd>
+
+      {{!-- APS fields --}}
+      {{#if aps}}
+        <dt>Address</dt>
+        <dd>
+          {{#if aps.location}}
+            {{#if aps.location.address}}{{aps.location.address}}{{else}}Not available{{/if}}
+          {{else}}
+            Not available
+          {{/if}}
+        </dd>
+
+        <dt>Borough</dt>
+        <dd>
+          {{#if aps.location}}
+            {{#if aps.location.borough}}{{aps.location.borough}}{{else}}Not available{{/if}}
+          {{else}}
+            Not available
+          {{/if}}
+        </dd>
+
+        <dt>Coordinates</dt>
+        <dd>
+          {{#if aps.location}}
+            {{#if aps.location.lat}}
+              {{aps.location.lat}}, {{aps.location.lng}}
+            {{else}}
+              Not available
+            {{/if}}
+          {{else}}
+            Not available
+          {{/if}}
+        </dd>
+
+        {{!-- Optional: APS install date if present --}}
+        {{#if aps.installDate}}
+          <dt>Install date</dt>
+          <dd>{{aps.installDate}}</dd>
+        {{/if}}
+      {{/if}}
+
+      {{!-- Ramp fields
+           IMPORTANT: If both aps and ramp exist (ID collision), the route prefers APS.
+           This block is therefore only shown when APS is not present. --}}
+      {{#unless aps}}
+        {{#if ramp}}
+          <dt>Street</dt>
+          <dd>{{#if ramp.streetName}}{{ramp.streetName}}{{else}}Not available{{/if}}</dd>
+
+          <dt>Borough</dt>
+          <dd>{{#if ramp.borough}}{{ramp.borough}}{{else}}Not available{{/if}}</dd>
+
+          <dt>Coordinates</dt>
+          <dd>
+            {{#if ramp.location}}
+              {{#if ramp.location.lat}}
+                {{ramp.location.lat}}, {{ramp.location.lng}}
+              {{else}}
+                Not available
+              {{/if}}
+            {{else}}
+              Not available
+            {{/if}}
+          </dd>
+        {{/if}}
+      {{/unless}}
+    </dl>
+
+    {{!-- Quick action: open report form targeted to this crossing --}}
+    {{#if user}}
+      <div style="margin-top:10px;">
+        <button
+          type="button"
+          class="btn btn-primary js-set-report-target"
+          data-target-type="{{reportTargetType}}"
+          data-target-id="{{reportTargetId}}"
+          data-target-label="This crossing"
+        >
+          Report an issue here
+        </button>
+      </div>
+    {{else}}
+      <p style="margin-top:10px;">
+        Log in to submit a report.
+        <a href="/login">Login</a>
+      </p>
+    {{/if}}
+  </section>
+
+  <hr>
+
+  {{!-- -------------------------
+       Nearby APS + curb ramps
+  -------------------------- --}}
+  <section aria-labelledby="nearby-title">
+    <h2 id="nearby-title">Nearby accessibility features</h2>
+
+    {{#if hasCoords}}
+      <p>Showing items within a short radius of this crossing (based on stored coordinates).</p>
+
+      <h3>APS intersections</h3>
+      {{#if hasNearbyAPS}}
+        <ul>
+          {{#each nearbyAPS}}
+            <li>
+              <a href="/crossing/{{apsId}}">APS {{apsId}}</a>
+              {{#if location.address}} — {{location.address}}{{/if}}
+              {{#if location.borough}} ({{location.borough}}){{/if}}
+
+              {{#if ../user}}
+                <div style="margin-top:6px;">
+                  <button
+                    type="button"
+                    class="btn btn-ghost js-set-report-target"
+                    data-target-type="aps"
+                    data-target-id="{{apsId}}"
+                    data-target-label="APS {{apsId}}"
+                  >
+                    Report this APS
+                  </button>
+                </div>
+              {{/if}}
+            </li>
+          {{/each}}
+        </ul>
+      {{else}}
+        <p>No nearby APS intersections found.</p>
+      {{/if}}
+
+      <h3>Curb ramps</h3>
+      {{#if hasNearbyRamps}}
+        <ul>
+          {{#each nearbyRamps}}
+            <li>
+              <a href="/crossing/{{rampId}}">Ramp {{rampId}}</a>
+              {{#if streetName}} — {{streetName}}{{/if}}
+              {{#if borough}} ({{borough}}){{/if}}
+
+              {{#if ../user}}
+                <div style="margin-top:6px;">
+                  <button
+                    type="button"
+                    class="btn btn-ghost js-set-report-target"
+                    data-target-type="ramp"
+                    data-target-id="{{rampId}}"
+                    data-target-label="Ramp {{rampId}}"
+                  >
+                    Report this curb ramp
+                  </button>
+                </div>
+              {{/if}}
+            </li>
+          {{/each}}
+        </ul>
+      {{else}}
+        <p>No nearby curb ramps found.</p>
+      {{/if}}
+    {{else}}
+      <p>
+        This crossing record does not include coordinates, so nearby APS/ramps cannot be computed.
+      </p>
+    {{/if}}
+  </section>
+
+  <hr>
+
+  {{!-- -------------------------
+       Community reports (existing + submit new)
+  -------------------------- --}}
+  <section aria-labelledby="reports-title">
+    <h2 id="reports-title">Community reports</h2>
+
+    {{!-- Existing reports --}}
+    {{#if hasReports}}
+      <ul id="reports-list">
+        {{#each reports}}
+          <li>
+            <strong>{{reportId}}</strong>
+            — {{targetType}}:{{targetId}}
+            — {{text}}
+            {{#if createdBy.username}} — by {{createdBy.username}}{{/if}}
+            {{#if createdAt}} — {{createdAt}}{{/if}}
+            {{#if status}} — status: {{status}}{{/if}}
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p id="reports-empty">No reports have been submitted for this crossing yet.</p>
+      <ul id="reports-list"></ul>
+    {{/if}}
+
+    {{!-- Submit new report (AJAX) --}}
+    {{#if user}}
+      <section aria-label="Submit a report" style="margin-top:12px;">
+        <h3>Submit a new report</h3>
+
+        <p id="report-target-label" aria-live="polite"></p>
+
+        <form id="report-form">
+          <input type="hidden" id="report-target-type" name="targetType" value="{{reportTargetType}}">
+          <input type="hidden" id="report-target-id" name="targetId" value="{{reportTargetId}}">
+
+          <label for="report-text">Describe the issue</label>
+          <textarea
+            id="report-text"
+            name="text"
+            rows="4"
+            required
+            maxlength="500"
+            aria-describedby="report-help"
+            placeholder="e.g., APS button is blocked by scaffolding."
+            style="width:100%; max-width:720px;"
+          ></textarea>
+
+          <p id="report-help">
+            Include specifics like exact corner, curb cut location, or what makes it inaccessible.
+          </p>
+
+          <div class="form-actions" style="display:flex; gap:10px; align-items:center;">
+            <button type="submit" class="btn btn-primary">Submit</button>
+            <button type="button" id="report-reset" class="btn btn-ghost">
+              Reset to this crossing
+            </button>
+          </div>
+        </form>
+
+        <p id="report-status" role="status" aria-live="polite" style="margin-top:8px;"></p>
+      </section>
+    {{else}}
+      <p>
+        Log in to submit a report.
+        <a href="/login">Login</a>
+      </p>
+    {{/if}}
+  </section>
+</main>
+
+{{!-- Inline page JS:
+     - Report submission (AJAX -> /api/reports)
+     - Report target switching (this crossing / nearby APS / nearby ramps) via buttons above
+--}}
+<script>
+(() => {
+  // -------- Shared helpers --------
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+  const pageError = document.getElementById('page-error');
+  function showPageError(msg) {
+    if (!pageError) return;
+    pageError.hidden = false;
+    pageError.textContent = 'Error: ' + String(msg);
+  }
+  function clearPageError() {
+    if (!pageError) return;
+    pageError.hidden = true;
+    pageError.textContent = '';
+  }
+
+  async function readErrorPayload(resp) {
+    const ct = resp.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      const data = await resp.json().catch(() => ({}));
+      return data?.error ? String(data.error) : '';
+    }
+    const text = await resp.text().catch(() => '');
+    return text ? String(text) : '';
+  }
+
+  // -------- Report target switching + submit --------
+  const reportForm = document.getElementById('report-form');
+  const reportTargetLabel = document.getElementById('report-target-label');
+  const reportTargetType = document.getElementById('report-target-type');
+  const reportTargetId = document.getElementById('report-target-id');
+  const reportText = document.getElementById('report-text');
+  const reportStatus = document.getElementById('report-status');
+  const reportReset = document.getElementById('report-reset');
+
+  function setReportStatus(msg) {
+    if (!reportStatus) return;
+    reportStatus.textContent = msg ? String(msg) : '';
+  }
+
+  function setReportTarget(type, id, label) {
+    if (!reportTargetType || !reportTargetId) return;
+
+    reportTargetType.value = String(type || '').trim();
+    reportTargetId.value = String(id || '').trim();
+
+    if (reportTargetLabel) {
+      const safeLabel = label ? String(label) : `${type}:${id}`;
+      reportTargetLabel.textContent = `Reporting: ${safeLabel} (${type}:${id})`;
+    }
+  }
+
+  // Cache defaults from server-rendered hidden inputs (no Handlebars-in-JS injection).
+  const defaultTargetType = reportTargetType?.value || '';
+  const defaultTargetId = reportTargetId?.value || '';
+  const crossingLabel = (document.getElementById('crossing-label')?.textContent || '').trim();
+  const defaultTargetLabel = crossingLabel || 'This crossing';
+
+  // Initialize label on page load (only if the form exists).
+  if (reportTargetType && reportTargetId) {
+    setReportTarget(defaultTargetType, defaultTargetId, defaultTargetLabel);
+  }
+
+  // Click handler for "Report this ..." buttons.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.js-set-report-target');
+    if (!btn) return;
+
+    // If not logged in, there's no form to target-switch.
+    if (!reportForm) return;
+
+    e.preventDefault();
+    clearPageError();
+    setReportStatus('');
+
+    const type = btn.dataset.targetType || '';
+    const id = btn.dataset.targetId || '';
+    const label = btn.dataset.targetLabel || 'Location';
+
+    if (!type || !id) return;
+    setReportTarget(type, id, label);
+    reportText?.focus?.();
+  });
+
+  // Reset back to default crossing target.
+  if (reportReset) {
+    reportReset.addEventListener('click', () => {
+      if (!reportForm) return;
+      clearPageError();
+      setReportStatus('');
+      setReportTarget(defaultTargetType, defaultTargetId, defaultTargetLabel);
+      reportText?.focus?.();
+    });
+  }
+
+  // Submit report (AJAX POST /api/reports)
+  if (reportForm) {
+    reportForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearPageError();
+      setReportStatus('');
+
+      const payload = {
+        targetType: reportTargetType?.value || '',
+        targetId: reportTargetId?.value || '',
+        text: reportText?.value?.trim() || ''
+      };
+
+      if (!payload.targetType || !payload.targetId) {
+        setReportStatus('Missing target information.');
+        return;
+      }
+      if (!payload.text) {
+        setReportStatus('Please enter a description.');
+        return;
+      }
+      if (!csrfToken) {
+        setReportStatus('Missing CSRF token (check <meta name="csrf-token">).');
+        return;
+      }
+
+      try {
+        const resp = await fetch('/api/reports', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'x-csrf-token': csrfToken
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) {
+          const msg = (await readErrorPayload(resp)) || `Submit failed (HTTP ${resp.status})`;
+          setReportStatus(msg);
+          return;
+        }
+
+        const data = await resp.json().catch(() => ({}));
+        const rid = data?.report?.reportId || 'OK';
+
+        setReportStatus(`Submitted successfully. Report ID: ${rid}`);
+        if (reportText) reportText.value = '';
+
+        // Best-effort: prepend the new report to the list for instant feedback.
+        const list = document.getElementById('reports-list');
+        const empty = document.getElementById('reports-empty');
+        if (list && data?.report) {
+          if (empty) empty.remove();
+          const li = document.createElement('li');
+          li.textContent = `${data.report.reportId} — ${data.report.targetType}:${data.report.targetId} — ${data.report.text}`;
+          list.prepend(li);
+        }
+      } catch (err) {
+        setReportStatus(err?.message || String(err));
+      }
+    });
+  }
+})();
+</script>

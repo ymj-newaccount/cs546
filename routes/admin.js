@@ -1,81 +1,202 @@
 // routes/admin.js
-// Admin dashboard routes.
-// Provides a basic page with a "Sync Data" button that runs seedAll(),
-// and a simple moderation panel for recent reports.
-
 import express from 'express';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import { seedAll } from '../tasks/seed.js';
 import {
   getRecentReports,
   hideReport,
+  unhideReport,
   deleteReport
 } from '../data/reportsAdmin.js';
 
 const router = express.Router();
 
-// Temporary admin guard. In the future, Person B can replace this
-// with real authentication / authorization logic.
-function ensureAdmin(req, res, next) {
-  // Example for later:
-  // if (!req.session.user || req.session.user.role !== 'admin') {
-  //   return res.status(403).send('Forbidden');
-  // }
+const CSRF_COOKIE = 'csrf_admin';
+const CSRF_FIELD = 'csrfToken';
+const CSRF_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+function getCookie(req, name) {
+  const header = req.headers?.cookie;
+  if (!header) return undefined;
+
+  const parts = header.split(';');
+  for (const part of parts) {
+    const [k, ...rest] = part.trim().split('=');
+    if (k === name) {
+      const v = rest.join('=');
+      try {
+        return decodeURIComponent(v);
+      } catch {
+        return v;
+      }
+    }
+  }
+  return undefined;
+}
+
+function isSecureRequest(req) {
+  const xfProto = req.headers['x-forwarded-proto'];
+  return req.secure === true || xfProto === 'https';
+}
+
+function issueCsrfToken(req, res) {
+  let token = getCookie(req, CSRF_COOKIE);
+  const looksValid = typeof token === 'string' && /^[a-f0-9]{64}$/i.test(token);
+
+  if (!looksValid) token = randomBytes(32).toString('hex');
+
+  res.cookie(CSRF_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: isSecureRequest(req),
+    path: '/admin',
+    maxAge: CSRF_MAX_AGE_MS
+  });
+
+  return token;
+}
+
+function tokensEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) return false;
+  return timingSafeEqual(aBuf, bBuf);
+}
+
+function requireCsrf(req, res, next) {
+  const cookieToken = getCookie(req, CSRF_COOKIE);
+  const bodyToken = req.body?.[CSRF_FIELD] || req.get('x-csrf-token');
+
+  if (!cookieToken || !bodyToken || !tokensEqual(cookieToken, bodyToken)) {
+    return res.status(403).send('Forbidden (CSRF)');
+  }
   next();
 }
 
-// GET /admin - render the admin dashboard.
+function parseBasicAuth(header) {
+  if (!header || typeof header !== 'string') return null;
+  if (!header.startsWith('Basic ')) return null;
+
+  const b64 = header.slice(6);
+  let decoded;
+  try {
+    decoded = Buffer.from(b64, 'base64').toString('utf8');
+  } catch {
+    return null;
+  }
+
+  const idx = decoded.indexOf(':');
+  if (idx < 0) return null;
+
+  return { user: decoded.slice(0, idx), pass: decoded.slice(idx + 1) };
+}
+
+function ensureAdmin(req, res, next) {
+  // 1) Session-based (preferred)
+  if (req.session?.user?.role === 'admin') return next();
+
+  // 2) Basic Auth fallback (optional)
+  const adminUser = process.env.ADMIN_USER;
+  const adminPass = process.env.ADMIN_PASS;
+
+  if (!adminUser || !adminPass) {
+    return res
+      .status(403)
+      .send('Forbidden');
+  }
+
+  const creds = parseBasicAuth(req.headers.authorization);
+  if (!creds) {
+    res.set('WWW-Authenticate', 'Basic realm="Admin Dashboard"');
+    return res.status(401).send('Authentication required');
+  }
+
+  const okUser = tokensEqual(creds.user, adminUser);
+  const okPass = tokensEqual(creds.pass, adminPass);
+
+  if (!okUser || !okPass) {
+    res.set('WWW-Authenticate', 'Basic realm="Admin Dashboard"');
+    return res.status(401).send('Invalid credentials');
+  }
+
+  return next();
+}
+
+// GET /admin
 router.get('/', ensureAdmin, async (req, res) => {
   const synced = req.query.synced === '1';
+  const csrfToken = issueCsrfToken(req, res);
 
   let reports = [];
   try {
     reports = await getRecentReports(20);
+    // add isHidden flag so handlebars can conditionally show buttons
+    reports = reports.map((r) => ({
+      ...r,
+      isHidden: String(r.status || '').toLowerCase() === 'hidden'
+    }));
   } catch (err) {
     console.error('Error fetching reports for admin dashboard:', err);
   }
 
-  res.render('admin', {
+  return res.render('admin', {
     title: 'Admin Dashboard',
     synced,
     reports,
-    hasReports: reports.length > 0
+    hasReports: reports.length > 0,
+    csrfToken
   });
 });
 
-// POST /admin/sync - run the seedAll() snapshot import.
-router.post('/sync', ensureAdmin, async (req, res) => {
+// POST /admin/sync
+router.post('/sync', ensureAdmin, requireCsrf, async (req, res) => {
   try {
-    console.log('Admin: starting data sync via seedAll()...');
     await seedAll();
-    console.log('Admin: data sync completed.');
-    res.redirect('/admin?synced=1');
+    return res.redirect('/admin?synced=1');
   } catch (err) {
     console.error('Error during admin sync:', err);
-    res.status(500).send('Failed to run data sync.');
+    return res.status(500).send('Failed to run data sync.');
   }
 });
 
-// POST /admin/reports/:reportId/hide - mark a report as hidden.
-router.post('/reports/:reportId/hide', ensureAdmin, async (req, res) => {
-  const { reportId } = req.params;
+// POST /admin/reports/:reportId/hide
+router.post('/reports/:reportId/hide', ensureAdmin, requireCsrf, async (req, res) => {
+  const reportId = String(req.params.reportId || '').trim();
+  if (!reportId) return res.status(400).send('Missing reportId');
+
   try {
     await hideReport(reportId);
   } catch (err) {
     console.error(`Error hiding report ${reportId}:`, err);
-    // We still redirect back; in a real app we might show a flash message.
   }
-  res.redirect('/admin');
+  return res.redirect('/admin');
 });
 
-// POST /admin/reports/:reportId/delete - permanently delete a report.
-router.post('/reports/:reportId/delete', ensureAdmin, async (req, res) => {
-  const { reportId } = req.params;
+// NEW: POST /admin/reports/:reportId/unhide
+router.post('/reports/:reportId/unhide', ensureAdmin, requireCsrf, async (req, res) => {
+  const reportId = String(req.params.reportId || '').trim();
+  if (!reportId) return res.status(400).send('Missing reportId');
+
+  try {
+    await unhideReport(reportId);
+  } catch (err) {
+    console.error(`Error unhiding report ${reportId}:`, err);
+  }
+  return res.redirect('/admin');
+});
+
+// POST /admin/reports/:reportId/delete
+router.post('/reports/:reportId/delete', ensureAdmin, requireCsrf, async (req, res) => {
+  const reportId = String(req.params.reportId || '').trim();
+  if (!reportId) return res.status(400).send('Missing reportId');
+
   try {
     await deleteReport(reportId);
   } catch (err) {
     console.error(`Error deleting report ${reportId}:`, err);
   }
-  res.redirect('/admin');
+  return res.redirect('/admin');
 });
 
 export default router;

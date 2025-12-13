@@ -1,9 +1,11 @@
 // config/mongoConnection.js
-// This module creates and reuses a single MongoDB client/connection
-// so the rest of the app can call getDb() and closeConnection().
+// Single MongoDB client/connection for the whole app.
+// - getDb() reuses the same connection
+// - concurrent calls share one in-flight connection attempt
+// - closeConnection() gracefully closes and resets cached refs
 
 import { MongoClient } from 'mongodb';
-import 'dotenv/config'; // Load environment variables from the .env file at the project root
+import 'dotenv/config';
 
 const mongoConfig = {
   serverUrl: process.env.MONGO_URL || 'mongodb://127.0.0.1:27017',
@@ -12,27 +14,41 @@ const mongoConfig = {
 
 let _client;
 let _db;
+let _dbPromise; // ensures only one connect happens even if getDb() is called concurrently
 
 export const getDb = async () => {
-  // If we already have a database instance, reuse it
   if (_db) return _db;
+  if (_dbPromise) return _dbPromise;
 
-  // Create a new MongoDB client and connect to the server
-  _client = new MongoClient(mongoConfig.serverUrl);
-  await _client.connect();
+  _client = new MongoClient(mongoConfig.serverUrl, {
+    // Optional but helpful for clearer failures in dev/CI environments
+    serverSelectionTimeoutMS: 5000
+  });
 
-  // Select the database and cache the reference
-  _db = _client.db(mongoConfig.database);
-  console.log('Connected to MongoDB:', mongoConfig.database);
-  return _db;
+  _dbPromise = _client
+    .connect()
+    .then(() => {
+      _db = _client.db(mongoConfig.database);
+      console.log('Connected to MongoDB:', mongoConfig.database);
+      return _db;
+    })
+    .catch((err) => {
+      // allow retry on next getDb() call
+      _dbPromise = undefined;
+      throw err;
+    });
+
+  return _dbPromise;
 };
 
 export const closeConnection = async () => {
-  // Close the MongoDB client and clear cached references
   if (_client) {
     await _client.close();
-    _client = undefined;
-    _db = undefined;
-    console.log('MongoDB connection closed');
   }
+
+  _client = undefined;
+  _db = undefined;
+  _dbPromise = undefined;
+
+  console.log('MongoDB connection closed');
 };

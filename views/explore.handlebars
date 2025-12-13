@@ -1,50 +1,238 @@
-{{!-- explore handle bars --}}
-<h1>Explore CommutAble NYC</h1>
-<p id="error" class="error" hidden></p>
-<section class="explore-layout">
-    {{!-- Filters--}}
-    <section class="explore-filters" aria-label="Map filters">
-        <h2>Filters</h2>
-        <label>
-            <input id="filter-stations" type="checkbox">
-            All Stations
-        </label>
-        <label>
-            <input id="filter-accessible" name="filter-accessible" type="checkbox">
-            Accessible Stations
-        </label>
-        <label>
-            <input id="filter-elevators" name="filter-elevators" type="checkbox">
-            Elevators
-        </label>
-        <label>
-            <input id="filter-aps" name="filter-aps" type="checkbox">
-            APS Intersections
-        </label>
-        <label>
-            <input id="filter-ramps" name="filter-ramps" type="checkbox">
-            Curb Ramps
-        </label>
-        <p id="filter-status" name="filter-status" role="status" aria-live="polite">
-            Loading map data...
-        </p>
-    </section>
-    {{!--Map--}}
-    <div id="map" class="explore-map" role="region" aria-label="Explore accessible transporation in NYC">
-    </div>
-    {{!-- List View Alternative --}}
-    <section class="list-view" aria-label="List of Locations">
-        <h2>List View</h2>
-        <p>This list provides all locations shown on the map.</p>
-        <ul id="location-list"></ul>
-    </section>
-</section>
-{{!-- Leaflet CDN--}}
-{{!--https://leafletjs.com/download.html--}}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+{{!-- views/explore.handlebars --}}
 
-{{!--Map Code--}}
-<script src="/public/js/explore.js"></script>
+<header class="page-title-bar">
+  <h1>Explore CommuteAble NYC</h1>
+
+  <label class="theme-switch">
+    <input id="theme-toggle" type="checkbox" aria-label="Toggle dark mode">
+    <span class="switch-ui" aria-hidden="true"></span>
+    <span class="switch-text">Night mode</span>
+  </label>
+</header>
+
+{{#if user}}
+  <p>Signed in as <strong>{{user.username}}</strong></p>
+
+  <nav class="auth-actions" aria-label="Account actions">
+    <a class="btn btn-ghost" href="/dashboard">Dashboard</a>
+
+    <form method="post" action="/logout" style="display:inline;">
+      <input type="hidden" name="csrfToken" value="{{csrfToken}}">
+      <button type="submit" class="btn btn-primary">Logout</button>
+    </form>
+  </nav>
+{{else}}
+  <nav class="auth-actions" aria-label="Authentication">
+    <a class="btn btn-ghost" href="/register">Register</a>
+    <a class="btn btn-primary" href="/login">Login</a>
+  </nav>
+{{/if}}
+
+<p id="error" class="error" hidden role="alert" aria-live="assertive"></p>
+
+<main class="explore-layout">
+  <section class="explore-filters" aria-label="Map filters">
+    <h2>Filters</h2>
+
+    <fieldset>
+      <legend>Map layers</legend>
+
+      <label>
+        <input id="filter-stations" type="checkbox">
+        All Stations
+      </label>
+
+      <label>
+        <input id="filter-accessible" name="filter-accessible" type="checkbox">
+        Accessible Stations
+      </label>
+
+      <label>
+        <input id="filter-elevators" name="filter-elevators" type="checkbox">
+        Elevators
+      </label>
+
+      <label>
+        <input id="filter-aps" name="filter-aps" type="checkbox">
+        APS Intersections
+      </label>
+
+      <label>
+        <input id="filter-ramps" name="filter-ramps" type="checkbox">
+        Curb Ramps
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Station filters</legend>
+
+      <p id="station-filters-help">
+        These filters apply to station results. Selecting them will also show station markers and list items.
+      </p>
+
+      <label>
+        <input id="filter-low-risk" name="filter-low-risk" type="checkbox" aria-describedby="station-filters-help">
+        Low outage risk (availability ≥ 95%)
+      </label>
+
+      <label>
+        <input id="filter-has-nearby-aps" name="filter-has-nearby-aps" type="checkbox" aria-describedby="station-filters-help">
+        Has APS within 250 meters
+      </label>
+    </fieldset>
+
+    <hr>
+
+    <h3>Search</h3>
+
+    <p id="sidebar-search-help">
+      Search by station name/ID, APS ID, or ramp ID (e.g., R01, Times Sq).
+    </p>
+
+    {{!-- No-JS fallback: GET /explore?q=... (JS can preventDefault and fetch /explore/api?q=...) --}}
+    <form
+      id="sidebar-search-form"
+      method="get"
+      action="/explore"
+      class="search-form"
+      role="search"
+      aria-label="Search the map"
+    >
+      <label for="sidebar-search-q">Station name / Station ID / APS ID / Ramp ID</label>
+
+      <div class="search-row">
+        <input
+          id="sidebar-search-q"
+          name="q"
+          type="text"
+          value="{{q}}"
+          maxlength="80"
+          autocomplete="off"
+          autocapitalize="none"
+          autocorrect="off"
+          spellcheck="false"
+          inputmode="search"
+          placeholder="e.g., Times"
+          aria-describedby="sidebar-search-help"
+        >
+
+        <button class="btn btn-primary" type="submit">Find</button>
+        <button class="btn btn-ghost" type="button" id="sidebar-search-clear">Clear</button>
+      </div>
+    </form>
+
+    <p id="filter-status" name="filter-status" role="status" aria-live="polite">
+      Loading map data...
+    </p>
+  </section>
+
+  <div
+    id="map"
+    class="explore-map"
+    role="region"
+    aria-label="Explore accessible transportation in NYC"
+    tabindex="0"
+  ></div>
+
+  <section class="list-view" aria-label="List of locations">
+    <h2>List View</h2>
+    <p>This list provides all locations shown on the map.</p>
+    <ul id="location-list"></ul>
+
+    <hr>
+
+    {{!-- Community Report Panel (shown/hidden via explore.js) --}}
+    <section class="community-reports" aria-label="Community reports">
+      {{#if user}}
+        <section id="report-panel" hidden aria-label="Submit an obstacle report">
+          <h3>Report an obstacle</h3>
+
+          <p id="report-target-label" aria-live="polite"></p>
+
+          <form id="report-form">
+            <input type="hidden" id="report-target-type" name="targetType">
+            <input type="hidden" id="report-target-id" name="targetId">
+
+            <label for="report-text">Describe the issue</label>
+            <textarea
+              id="report-text"
+              name="text"
+              rows="4"
+              required
+              maxlength="500"
+              aria-describedby="report-help"
+              placeholder="e.g., Northbound entrance is blocked by construction fencing."
+            ></textarea>
+
+            <p id="report-help">
+              Please include details like location, direction (e.g., northbound entrance), and what makes it inaccessible.
+            </p>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Submit</button>
+              <button type="button" id="report-cancel" class="btn btn-ghost">Cancel</button>
+            </div>
+          </form>
+
+          <p id="report-status" role="status" aria-live="polite"></p>
+        </section>
+      {{else}}
+        <p>
+          Log in to submit community reports.
+          <a href="/login">Login</a>
+        </p>
+      {{/if}}
+    </section>
+  </section>
+</main>
+
+{{!-- Welcome poster modal --}}
+<div id="welcome-modal" class="modal-overlay" hidden>
+  <div
+    class="modal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="welcome-title"
+  >
+    <div class="modal-header">
+      <h2 id="welcome-title">Welcome to CommuteAble NYC</h2>
+      <button type="button" id="welcome-close-x" class="btn btn-ghost" aria-label="Close welcome">
+        ✕
+      </button>
+    </div>
+
+    <img
+      class="modal-poster"
+      src="/public/img/Poster1.jpg"
+      alt="CommuteAble NYC welcome poster"
+    >
+
+    <p class="modal-subtitle">
+      Use the filters to explore accessible stations, elevators, APS intersections, and curb ramps.
+    </p>
+
+    <div class="modal-actions">
+      <button type="button" id="welcome-close" class="btn btn-primary">Get started</button>
+    </div>
+  </div>
+</div>
+
+{{!-- Leaflet CDN (page-specific) --}}
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+  crossorigin=""
+>
+
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+  crossorigin=""
+></script>
+
+{{!-- Follow/Unfollow initial state (bookmarks) --}}
+<script id="bookmarks-json" type="application/json">{{{bookmarksJson}}}</script>
+
+{{!-- Map code --}}
+<script src="/public/js/explore.js" defer></script>

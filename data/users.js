@@ -1,111 +1,221 @@
-import mongoCollections from "../config/mongoCollections.js";
-const users = mongoCollections.users;
-import { ObjectId } from "mongodb";
-// Library for password hashing (security)
-import bcrypt from "bcrypt";
-const saltRounds = 12;
+// data/users.js
+// Users data-access layer (aligned with config/mongoConnection.js getDb()).
 
-// Creates a new user
+import { getDb } from '../config/mongoConnection.js';
+import { ObjectId } from 'mongodb';
+import bcrypt from 'bcryptjs';
+
+const SALT_ROUNDS = 12;
+
+// Ensure indexes are created only once per process.
+let _indexesReady = null;
+
+function makeError(message, status = 400) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype;
+}
+
+function assertNonEmptyString(value, fieldName) {
+  if (typeof value !== 'string') throw makeError(`${fieldName} must be a string`, 400);
+  const v = value.trim();
+  if (!v) throw makeError(`${fieldName} cannot be empty`, 400);
+  return v;
+}
+
+function normalizeUsername(username) {
+  const u = assertNonEmptyString(username, 'username');
+  if (u.length < 3 || u.length > 30) {
+    throw makeError('username must be between 3 and 30 characters', 400);
+  }
+  if (!/^[a-zA-Z0-9_]+$/.test(u)) {
+    throw makeError('username may only contain letters, numbers, and underscore', 400);
+  }
+  return { username: u, usernameLower: u.toLowerCase() };
+}
+
+function normalizeEmail(email) {
+  const e = assertNonEmptyString(email, 'email');
+  if (e.length > 254) throw makeError('email is too long', 400);
+  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  if (!ok) throw makeError('email is not valid', 400);
+  return { email: e, emailLower: e.toLowerCase() };
+}
+
+// Used only for account creation
+function validatePasswordForCreate(password) {
+  const p = assertNonEmptyString(password, 'password');
+  const bytes = Buffer.byteLength(p, 'utf8');
+  if (bytes > 72) throw makeError('password is too long (max 72 bytes for bcrypt)', 400);
+  if (p.length < 8) throw makeError('password must be at least 8 characters', 400);
+  return p;
+}
+
+// Used for login: do not enforce min length (avoid leaking rules), only enforce bcrypt limit + non-empty
+function validatePasswordForLogin(password) {
+  const p = assertNonEmptyString(password, 'password');
+  const bytes = Buffer.byteLength(p, 'utf8');
+  if (bytes > 72) throw makeError('password is too long (max 72 bytes for bcrypt)', 400);
+  return p;
+}
+
+function ensureObjectId(id, fieldName = 'id') {
+  const s = assertNonEmptyString(id, fieldName);
+  if (!ObjectId.isValid(s)) throw makeError(`${fieldName} is not a valid ObjectId`, 400);
+  return new ObjectId(s);
+}
+
+async function usersCollection() {
+  const db = await getDb();
+  const col = db.collection('users');
+
+  if (!_indexesReady) {
+    _indexesReady = (async () => {
+      await col.createIndex({ usernameLower: 1 }, { unique: true });
+      await col.createIndex({ emailLower: 1 }, { unique: true });
+      await col.createIndex({ createdAt: -1 });
+      await col.createIndex({ role: 1 });
+    })();
+  }
+  await _indexesReady;
+
+  return col;
+}
+
+function sanitizeUser(doc) {
+  if (!doc) return doc;
+  const out = { ...doc };
+  if (out._id) out._id = out._id.toString();
+  delete out.hashedPassword;
+  delete out.usernameLower;
+  delete out.emailLower;
+  return out;
+}
+
+// ---------------------------
+// Public API
+// ---------------------------
+
 export async function createUser(username, email, password) {
-    // Validate inputs 
-    if (!username || !email || !password) throw "All fields are required";
-    if (typeof username !== "string" || 
-        typeof email !== "string" || 
-        typeof password !== "string") {
-        throw "All inputs must be strings";
+  const { username: u, usernameLower } = normalizeUsername(username);
+  const { email: e, emailLower } = normalizeEmail(email);
+  const p = validatePasswordForCreate(password);
+
+  const col = await usersCollection();
+
+  // Bootstrap: if no users exist yet, make the first user an admin
+  const userCount = await col.estimatedDocumentCount();
+  const role = userCount === 0 ? 'admin' : 'user';
+
+  const hashedPassword = await bcrypt.hash(p, SALT_ROUNDS);
+
+  const now = new Date();
+  const newUser = {
+    username: u,
+    usernameLower,
+    email: e,
+    emailLower,
+    hashedPassword,
+    role,
+    bookmarks: [],
+    alerts: [],
+    createdAt: now,
+    updatedAt: now
+  };
+
+  try {
+    const insertInfo = await col.insertOne(newUser);
+    if (!insertInfo.acknowledged) throw makeError('Could not add user', 500);
+
+    const created = await col.findOne({ _id: insertInfo.insertedId });
+    return sanitizeUser(created);
+  } catch (err) {
+    if (err && err.code === 11000) {
+      throw makeError('Username or email already exists', 400);
     }
-
-    const usersCollection = await users();
-    // If username/email already exists, stop 
-    const existingUser = await usersCollection.findOne({ $or: [{ username }, { email }] });
-    if (existingUser) throw "Username or email already exists";
-
-    // Hashing to protect user security
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    const newUser = {
-        username,
-        email,
-        hashedPassword,
-        bookmarks: [],
-        alerts: [],
-        createdAt: new Date(),
-    };
-
-    const insertInfo = await usersCollection.insertOne(newUser);
-    if (!insertInfo.acknowledged) throw "Could not add user";
-
-    return await getUserById(insertInfo.insertedId.toString());
+    throw err;
+  }
 }
 
-
-// Verify user login
 export async function checkUser(username, password) {
-    if (!username || !password) throw "You must provide a username and a password";
-    const usersCollection = await users();
+  const { usernameLower } = normalizeUsername(username);
+  const p = validatePasswordForLogin(password);
 
-    const user = await usersCollection.findOne({ username });
-    if (!user) throw "Either the username or password is invalid";
+  const col = await usersCollection();
 
-    const passwordMatch = await bcrypt.compare(password, user.hashedPassword);
-    if (!passwordMatch) throw "Either the username or password is invalid";
+  const user = await col.findOne({ usernameLower });
+  if (!user) throw makeError('Either the username or password is invalid', 401);
 
-    return user;
+  const ok = await bcrypt.compare(p, user.hashedPassword);
+  if (!ok) throw makeError('Either the username or password is invalid', 401);
+
+  return sanitizeUser(user);
 }
 
-
-// Get user by their id
 export async function getUserById(id) {
-    if (!id) throw "You must provide an id";
-    const usersCollection = await users();
+  const _id = ensureObjectId(id, 'userId');
+  const col = await usersCollection();
 
-    const user = await usersCollection.findOne({ _id: new ObjectId(id) });
-    if (!user) throw "User not found";
+  const user = await col.findOne({ _id });
+  if (!user) throw makeError('User not found', 404);
 
-    user._id = user._id.toString();
-    delete user.hashedPassword;
-    return user;
+  return sanitizeUser(user);
 }
 
-
-//System for users to create station bookmarks
-// Function that allows a user to add a station to their bookmarks
+// Add a station to bookmarks (idempotent)
 export async function addBookmark(userId, stationId) {
-    if (!userId || !stationId) throw "Must provide userId and stationId";
-    const usersCollection = await users();
+  const _id = ensureObjectId(userId, 'userId');
+  const sid = assertNonEmptyString(stationId, 'stationId');
 
-    const updateInfo = await usersCollection.updateOne(
-        { _id: new ObjectId(userId) },
-        // Prevents duplicates
-        { $addToSet: { bookmarks: stationId } }
-    );
-    if (updateInfo.modifiedCount === 0) throw "Could not add bookmark";
-    return await getUserById(userId);
+  const col = await usersCollection();
+
+  const result = await col.updateOne(
+    { _id },
+    { $addToSet: { bookmarks: sid }, $set: { updatedAt: new Date() } }
+  );
+
+  if (result.matchedCount === 0) throw makeError('User not found', 404);
+  return await getUserById(userId);
 }
-// Function that allows a user to remove a station from their bookmarks
+
 export async function removeBookmark(userId, stationId) {
-    if (!userId || !stationId) throw "Must provide userId and stationId";
-    const usersCollection = await users();
+  const _id = ensureObjectId(userId, 'userId');
+  const sid = assertNonEmptyString(stationId, 'stationId');
 
-    const updateInfo = await usersCollection.updateOne(
-        { _id: new ObjectId(userId) },
-        // Removes elements with this id
-        { $pull: { bookmarks: stationId } }
-    );
-    if (updateInfo.modifiedCount === 0) throw "Could not remove bookmark";
-    return await getUserById(userId);
+  const col = await usersCollection();
+
+  const result = await col.updateOne(
+    { _id },
+    { $pull: { bookmarks: sid }, $set: { updatedAt: new Date() } }
+  );
+
+  if (result.matchedCount === 0) throw makeError('User not found', 404);
+  return await getUserById(userId);
 }
 
-
-// Function for a user to set alerts
 export async function setAlerts(userId, alertsArray) {
-    if (!userId || !Array.isArray(alertsArray)) throw "Must provide userId and an array of alerts";
-    const usersCollection = await users();
+  const _id = ensureObjectId(userId, 'userId');
 
-    const updateInfo = await usersCollection.updateOne(
-        { _id: new ObjectId(userId) },
-        { $set: { alerts: alertsArray } }
-    );
-    if (updateInfo.modifiedCount === 0) throw "Could not update alerts";
-    return await getUserById(userId);
+  if (!Array.isArray(alertsArray)) throw makeError('alerts must be an array', 400);
+  if (alertsArray.length > 200) throw makeError('alerts array is too large', 400);
+
+  const normalizedAlerts = alertsArray.map((a, idx) => {
+    if (typeof a === 'string') return a.trim();
+    if (isPlainObject(a)) return a;
+    throw makeError(`alerts[${idx}] must be a string or a plain object`, 400);
+  });
+
+  const col = await usersCollection();
+
+  const result = await col.updateOne(
+    { _id },
+    { $set: { alerts: normalizedAlerts, updatedAt: new Date() } }
+  );
+
+  if (result.matchedCount === 0) throw makeError('User not found', 404);
+  return await getUserById(userId);
 }

@@ -4,11 +4,12 @@
   <p><strong>Data sync completed.</strong></p>
 {{/if}}
 
-<p>This is the admin dashboard for CommuteAble NYC (Person A scope).</p>
+<p>This is the admin dashboard for CommuteAble NYC.</p>
 <p>The button below triggers a full snapshot import (seedAll) from the
    external open-data sources into MongoDB.</p>
 
 <form method="post" action="/admin/sync" style="margin-bottom: 1.5rem;">
+  <input type="hidden" name="csrfToken" value="{{csrfToken}}">
   <button type="submit">Sync Data (run seedAll)</button>
 </form>
 
@@ -37,15 +38,25 @@
           <td>{{this.status}}</td>
           <td>{{this.createdAt}}</td>
           <td>
-            <form method="post" action="/admin/reports/{{this.reportId}}/hide" style="display:inline;">
-              <button type="submit">Hide</button>
-            </form>
+            {{#if this.isHidden}}
+              <form method="post" action="/admin/reports/{{this.reportId}}/unhide" style="display:inline;">
+                <input type="hidden" name="csrfToken" value="{{../csrfToken}}">
+                <button type="submit">Unhide</button>
+              </form>
+            {{else}}
+              <form method="post" action="/admin/reports/{{this.reportId}}/hide" style="display:inline;">
+                <input type="hidden" name="csrfToken" value="{{../csrfToken}}">
+                <button type="submit">Hide</button>
+              </form>
+            {{/if}}
+
             <form
               method="post"
               action="/admin/reports/{{this.reportId}}/delete"
               style="display:inline;"
               onsubmit="return confirm('Delete this report permanently?');"
             >
+              <input type="hidden" name="csrfToken" value="{{../csrfToken}}">
               <button type="submit">Delete</button>
             </form>
           </td>

@@ -1,0 +1,554 @@
+{{!-- views/station.handlebars
+     Station detail page (GET /station/:id)
+
+     Inputs (from routes/stationPage.js):
+       - stationId (string)
+       - station (object)
+       - elevators, hasElevators
+       - hasCoords (boolean)              // true only when lat/lng are usable numbers
+       - nearbyAPS, hasNearbyAPS
+       - nearbyRamps, hasNearbyRamps
+       - reports, hasReports
+       - reportTargetType, reportTargetId
+       - isBookmarked (boolean)
+
+     Globals (from middleware / layout):
+       - user (null or { _id, username, ... })
+       - csrfToken (string)
+       - <meta name="csrf-token" ...> exists in main layout
+--}}
+
+<header class="page-title-bar">
+  <h1>
+    Station Details
+    {{#if station.stationName}}
+      — {{station.stationName}}
+    {{/if}}
+  </h1>
+
+  {{!-- Theme toggle (theme.js looks for #theme-toggle) --}}
+  <label class="theme-switch">
+    <input id="theme-toggle" type="checkbox" aria-label="Toggle dark mode">
+    <span class="switch-ui" aria-hidden="true"></span>
+    <span class="switch-text">Night mode</span>
+  </label>
+</header>
+
+{{!-- Hidden station name for JS (no custom helpers needed) --}}
+<span id="station-name" hidden>
+  {{#if station.stationName}}{{station.stationName}}{{/if}}
+</span>
+
+{{#if user}}
+  <p>Signed in as <strong>{{user.username}}</strong></p>
+
+  <nav class="auth-actions" aria-label="Account actions">
+    <a class="btn btn-ghost" href="/explore">Back to Explore</a>
+    <a class="btn btn-ghost" href="/dashboard">Dashboard</a>
+
+    {{!-- Logout is POST; include CSRF --}}
+    <form method="post" action="/logout" style="display:inline;">
+      <input type="hidden" name="csrfToken" value="{{csrfToken}}">
+      <button type="submit" class="btn btn-primary">Logout</button>
+    </form>
+  </nav>
+{{else}}
+  <nav class="auth-actions" aria-label="Authentication">
+    <a class="btn btn-ghost" href="/register">Register</a>
+    <a class="btn btn-primary" href="/login">Login</a>
+    <a class="btn btn-ghost" href="/explore">Back to Explore</a>
+  </nav>
+{{/if}}
+
+{{!-- Page-level error/status messages (used by inline JS below) --}}
+<p id="page-error" class="error" hidden role="alert" aria-live="assertive"></p>
+
+<main style="padding:12px;">
+  {{!-- -------------------------
+       Station summary
+  -------------------------- --}}
+  <section aria-labelledby="station-summary-title">
+    <h2 id="station-summary-title">Station summary</h2>
+
+    <dl>
+      <dt>Station ID</dt>
+      <dd>{{stationId}}</dd>
+
+      <dt>Borough</dt>
+      <dd>{{#if station.borough}}{{station.borough}}{{else}}Not available{{/if}}</dd>
+
+      <dt>Division</dt>
+      <dd>{{#if station.division}}{{station.division}}{{else}}Not available{{/if}}</dd>
+
+      <dt>Line</dt>
+      <dd>{{#if station.line}}{{station.line}}{{else}}Not available{{/if}}</dd>
+
+      <dt>ADA status</dt>
+      <dd>{{#if station.adaStatus}}{{station.adaStatus}}{{else}}Unknown{{/if}}</dd>
+
+      <dt>Routes</dt>
+      <dd>
+        {{#if station.daytimeRoutes}}
+          {{#if station.daytimeRoutes.length}}
+            {{#each station.daytimeRoutes}}
+              <span>{{this}}</span>{{#unless @last}}, {{/unless}}
+            {{/each}}
+          {{else}}
+            None listed
+          {{/if}}
+        {{else}}
+          None listed
+        {{/if}}
+      </dd>
+      <dt>Coordinates</dt>
+      <dd>
+        {{#if hasCoords}}
+          {{station.location.lat}}, {{station.location.lng}}
+        {{else}}
+          Not available
+        {{/if}}
+      </dd>
+    </dl>
+
+    {{!-- Follow/Unfollow (AJAX) --}}
+    <section aria-label="Follow station" style="margin-top:10px;">
+      {{#if user}}
+        <button
+          id="follow-toggle"
+          type="button"
+          class="btn {{#if isBookmarked}}btn-primary{{else}}btn-ghost{{/if}}"
+          data-station-id="{{stationId}}"
+          aria-pressed="{{#if isBookmarked}}true{{else}}false{{/if}}"
+        >
+          {{#if isBookmarked}}Unfollow station{{else}}Follow station{{/if}}
+        </button>
+        <p id="follow-status" role="status" aria-live="polite" style="margin-top:8px;"></p>
+      {{else}}
+        <p>
+          Log in to follow this station.
+          <a href="/login">Login</a>
+        </p>
+      {{/if}}
+    </section>
+  </section>
+
+  <hr>
+
+  {{!-- -------------------------
+       Elevators at this station
+  -------------------------- --}}
+  <section aria-labelledby="elevators-title">
+    <h2 id="elevators-title">Elevators</h2>
+
+    {{#if hasElevators}}
+      <p>This list reflects the most recent snapshot imported into the database.</p>
+
+      <ul>
+        {{#each elevators}}
+          <li>
+            <strong>Elevator {{elevatorId}}</strong>
+            — Status: {{#if status}}{{status}}{{else}}Unknown{{/if}}
+            {{#if lastUpdated}} — Last updated: {{lastUpdated}}{{/if}}
+
+            {{#if ../user}}
+              <div style="margin-top:6px;">
+                <button
+                  type="button"
+                  class="btn btn-ghost js-set-report-target"
+                  data-target-type="elevator"
+                  data-target-id="{{elevatorId}}"
+                  data-target-label="Elevator {{elevatorId}}"
+                >
+                  Report this elevator
+                </button>
+              </div>
+            {{/if}}
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p>No elevators found for this station in the current snapshot.</p>
+    {{/if}}
+  </section>
+
+  <hr>
+
+  {{!-- -------------------------
+       Nearby APS + curb ramps
+       Note: Use hasCoords to avoid showing the "nearby radius" text when coordinates are missing/invalid.
+  -------------------------- --}}
+  <section aria-labelledby="nearby-title">
+    <h2 id="nearby-title">Nearby accessibility features</h2>
+
+    {{#if hasCoords}}
+      <p>Showing items within a short radius of this station (based on stored coordinates).</p>
+
+      <h3>APS intersections</h3>
+      {{#if hasNearbyAPS}}
+        <ul>
+          {{#each nearbyAPS}}
+            <li>
+              <a href="/crossing/{{apsId}}">APS {{apsId}}</a>
+              {{#if location.address}} — {{location.address}}{{/if}}
+              {{#if location.borough}} ({{location.borough}}){{/if}}
+
+              {{#if ../user}}
+                <div style="margin-top:6px;">
+                  <button
+                    type="button"
+                    class="btn btn-ghost js-set-report-target"
+                    data-target-type="aps"
+                    data-target-id="{{apsId}}"
+                    data-target-label="APS {{apsId}}"
+                  >
+                    Report this APS
+                  </button>
+                </div>
+              {{/if}}
+            </li>
+          {{/each}}
+        </ul>
+      {{else}}
+        <p>No nearby APS intersections found.</p>
+      {{/if}}
+
+      <h3>Curb ramps</h3>
+      {{#if hasNearbyRamps}}
+        <ul>
+          {{#each nearbyRamps}}
+            <li>
+              <a href="/crossing/{{rampId}}">Ramp {{rampId}}</a>
+              {{#if streetName}} — {{streetName}}{{/if}}
+              {{#if borough}} ({{borough}}){{/if}}
+
+              {{#if ../user}}
+                <div style="margin-top:6px;">
+                  <button
+                    type="button"
+                    class="btn btn-ghost js-set-report-target"
+                    data-target-type="ramp"
+                    data-target-id="{{rampId}}"
+                    data-target-label="Ramp {{rampId}}"
+                  >
+                    Report this curb ramp
+                  </button>
+                </div>
+              {{/if}}
+            </li>
+          {{/each}}
+        </ul>
+      {{else}}
+        <p>No nearby curb ramps found.</p>
+      {{/if}}
+    {{else}}
+      <p>
+        This station record does not include usable coordinates, so nearby APS/ramps cannot be computed.
+      </p>
+    {{/if}}
+  </section>
+
+  <hr>
+
+  {{!-- -------------------------
+       Community reports (existing + submit new)
+  -------------------------- --}}
+  <section aria-labelledby="reports-title">
+    <h2 id="reports-title">Community reports</h2>
+
+    {{!-- Existing reports --}}
+    {{#if hasReports}}
+      <ul id="reports-list">
+        {{#each reports}}
+          <li>
+            <strong>{{reportId}}</strong>
+            — {{targetType}}:{{targetId}}
+            — {{text}}
+            {{#if createdBy.username}} — by {{createdBy.username}}{{/if}}
+            {{#if createdAt}} — {{createdAt}}{{/if}}
+            {{#if status}} — status: {{status}}{{/if}}
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p id="reports-empty">No reports have been submitted for this station yet.</p>
+      <ul id="reports-list"></ul>
+    {{/if}}
+
+    {{!-- Submit new report (AJAX) --}}
+    {{#if user}}
+      <section aria-label="Submit a report" style="margin-top:12px;">
+        <h3>Submit a new report</h3>
+
+        <p id="report-target-label" aria-live="polite"></p>
+
+        <form id="report-form">
+          <input type="hidden" id="report-target-type" name="targetType" value="{{reportTargetType}}">
+          <input type="hidden" id="report-target-id" name="targetId" value="{{reportTargetId}}">
+
+          <label for="report-text">Describe the issue</label>
+          <textarea
+            id="report-text"
+            name="text"
+            rows="4"
+            required
+            maxlength="500"
+            aria-describedby="report-help"
+            placeholder="e.g., Entrance is blocked by construction fencing."
+            style="width:100%; max-width:720px;"
+          ></textarea>
+
+          <p id="report-help">
+            Include specifics like entrance direction, exact location, and what makes it inaccessible.
+          </p>
+
+          <div class="form-actions" style="display:flex; gap:10px; align-items:center;">
+            <button type="submit" class="btn btn-primary">Submit</button>
+            <button type="button" id="report-reset" class="btn btn-ghost">
+              Reset to station
+            </button>
+          </div>
+        </form>
+
+        <p id="report-status" role="status" aria-live="polite" style="margin-top:8px;"></p>
+      </section>
+    {{else}}
+      <p>
+        Log in to submit a report.
+        <a href="/login">Login</a>
+      </p>
+    {{/if}}
+  </section>
+</main>
+
+{{!-- Inline page JS:
+     - Follow/Unfollow station (AJAX -> /api/stations/:id/follow|unfollow)
+     - Report submission (AJAX -> /api/reports)
+     - Report target switching (station/elevator/aps/ramp) via buttons above
+--}}
+<script>
+(() => {
+  // -------- Shared helpers --------
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+  const pageError = document.getElementById('page-error');
+  function showPageError(msg) {
+    if (!pageError) return;
+    pageError.hidden = false;
+    pageError.textContent = 'Error: ' + String(msg);
+  }
+  function clearPageError() {
+    if (!pageError) return;
+    pageError.hidden = true;
+    pageError.textContent = '';
+  }
+
+  async function readErrorPayload(resp) {
+    const ct = resp.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      const data = await resp.json().catch(() => ({}));
+      return data?.error ? String(data.error) : '';
+    }
+    const text = await resp.text().catch(() => '');
+    return text ? String(text) : '';
+  }
+
+  // -------- Follow/Unfollow station --------
+  const followBtn = document.getElementById('follow-toggle');
+  const followStatus = document.getElementById('follow-status');
+
+  function setFollowStatus(msg) {
+    if (!followStatus) return;
+    followStatus.textContent = msg ? String(msg) : '';
+  }
+
+  function applyFollowUI(followed) {
+    if (!followBtn) return;
+    const isFollowed = Boolean(followed);
+    followBtn.setAttribute('aria-pressed', isFollowed ? 'true' : 'false');
+    followBtn.textContent = isFollowed ? 'Unfollow station' : 'Follow station';
+    followBtn.classList.toggle('btn-primary', isFollowed);
+    followBtn.classList.toggle('btn-ghost', !isFollowed);
+  }
+
+  async function postFollowToggle(stationId, shouldFollow) {
+    if (!csrfToken) throw new Error('Missing CSRF token (check <meta name="csrf-token">).');
+
+    const action = shouldFollow ? 'follow' : 'unfollow';
+    const url = `/api/stations/${encodeURIComponent(String(stationId))}/${action}`;
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      }
+    });
+
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+
+    return resp.json().catch(() => ({}));
+  }
+
+  if (followBtn) {
+    followBtn.addEventListener('click', async () => {
+      clearPageError();
+      setFollowStatus('');
+
+      const stationId = (followBtn.dataset.stationId || '').trim();
+      if (!stationId) return;
+
+      const currentlyFollowed = followBtn.getAttribute('aria-pressed') === 'true';
+      followBtn.disabled = true;
+
+      try {
+        const data = await postFollowToggle(stationId, !currentlyFollowed);
+        const newFollowed = typeof data.followed === 'boolean' ? data.followed : !currentlyFollowed;
+        applyFollowUI(newFollowed);
+        setFollowStatus(newFollowed ? 'Station followed.' : 'Station unfollowed.');
+      } catch (e) {
+        showPageError(e?.message || String(e));
+      } finally {
+        followBtn.disabled = false;
+      }
+    });
+  }
+
+  // -------- Report target switching + submit --------
+  const reportForm = document.getElementById('report-form');
+  const reportTargetLabel = document.getElementById('report-target-label');
+  const reportTargetType = document.getElementById('report-target-type');
+  const reportTargetId = document.getElementById('report-target-id');
+  const reportText = document.getElementById('report-text');
+  const reportStatus = document.getElementById('report-status');
+  const reportReset = document.getElementById('report-reset');
+
+  function setReportStatus(msg) {
+    if (!reportStatus) return;
+    reportStatus.textContent = msg ? String(msg) : '';
+  }
+
+  function setReportTarget(type, id, label) {
+    if (!reportTargetType || !reportTargetId) return;
+
+    reportTargetType.value = String(type || '').trim();
+    reportTargetId.value = String(id || '').trim();
+
+    if (reportTargetLabel) {
+      const safeLabel = label ? String(label) : `${type}:${id}`;
+      reportTargetLabel.textContent = `Reporting: ${safeLabel} (${type}:${id})`;
+    }
+  }
+
+  // Cache defaults from server-rendered hidden inputs (no Handlebars-in-JS injection).
+  const defaultTargetType = reportTargetType?.value || 'station';
+  const defaultTargetId = reportTargetId?.value || '';
+  const stationName = (document.getElementById('station-name')?.textContent || '').trim();
+  const defaultTargetLabel = stationName || 'This station';
+
+  // Initialize the label on page load (only if the form exists).
+  if (reportTargetType && reportTargetId) {
+    setReportTarget(defaultTargetType, defaultTargetId, defaultTargetLabel);
+  }
+
+  // Click handler for "Report this elevator/APS/ramp" buttons.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.js-set-report-target');
+    if (!btn) return;
+
+    // If not logged in, there's no form to target-switch.
+    if (!reportForm) return;
+
+    e.preventDefault();
+    clearPageError();
+    setReportStatus('');
+
+    const type = btn.dataset.targetType || '';
+    const id = btn.dataset.targetId || '';
+    const label = btn.dataset.targetLabel || 'Location';
+
+    if (!type || !id) return;
+    setReportTarget(type, id, label);
+    reportText?.focus?.();
+  });
+
+  // Reset back to station target.
+  if (reportReset) {
+    reportReset.addEventListener('click', () => {
+      if (!reportForm) return;
+      clearPageError();
+      setReportStatus('');
+      setReportTarget(defaultTargetType, defaultTargetId, defaultTargetLabel);
+      reportText?.focus?.();
+    });
+  }
+
+  // Submit report (AJAX POST /api/reports)
+  if (reportForm) {
+    reportForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearPageError();
+      setReportStatus('');
+
+      const payload = {
+        targetType: reportTargetType?.value || '',
+        targetId: reportTargetId?.value || '',
+        text: reportText?.value?.trim() || ''
+      };
+
+      if (!payload.targetType || !payload.targetId) {
+        setReportStatus('Missing target information.');
+        return;
+      }
+      if (!payload.text) {
+        setReportStatus('Please enter a description.');
+        return;
+      }
+      if (!csrfToken) {
+        setReportStatus('Missing CSRF token (check <meta name="csrf-token">).');
+        return;
+      }
+
+      try {
+        const resp = await fetch('/api/reports', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'x-csrf-token': csrfToken
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) {
+          const msg = (await readErrorPayload(resp)) || `Submit failed (HTTP ${resp.status})`;
+          setReportStatus(msg);
+          return;
+        }
+
+        const data = await resp.json().catch(() => ({}));
+        const rid = data?.report?.reportId || 'OK';
+
+        setReportStatus(`Submitted successfully. Report ID: ${rid}`);
+        if (reportText) reportText.value = '';
+
+        // Best-effort: prepend the new report to the list for instant feedback.
+        const list = document.getElementById('reports-list');
+        const empty = document.getElementById('reports-empty');
+        if (list && data?.report) {
+          if (empty) empty.remove();
+          const li = document.createElement('li');
+          li.textContent = `${data.report.reportId} — ${data.report.targetType}:${data.report.targetId} — ${data.report.text}`;
+          list.prepend(li);
+        }
+      } catch (err) {
+        setReportStatus(err?.message || String(err));
+      }
+    });
+  }
+})();
+</script>

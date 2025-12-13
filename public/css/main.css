@@ -1,7 +1,452 @@
-/*Map Styling */
-.explore-map
-{
-    height: 500px;
-    width: 100%;
-    border: 1px solid #b85e5e;
+/* public/css/main.css */
+
+/* ---------------------------
+   Theme variables
+---------------------------- */
+:root {
+  --bg: #ffffff;
+  --text: #111111;
+  --link: #1a0dab;
+  --border: #dddddd;
+
+  --panel-bg: #ffffff;
+
+  --primary-text: #ffffff;
+
+  --error: #b00020;
+
+  /* Map border in light mode */
+  --map-border: #b85e5e;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f1115;
+  --text: #e9e9ea;
+  --link: #8ab4f8;
+  --border: #2a2f3a;
+
+  --panel-bg: #141824;
+
+  --primary-text: #111111;
+
+  --error: #ff6b81;
+
+  /* Map border in dark mode */
+  --map-border: #8a4a4a;
+}
+
+/* ---------------------------
+   Global page styling
+---------------------------- */
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  line-height: 1.45;
+}
+
+a {
+  color: var(--link);
+}
+
+a:focus-visible {
+  outline: 3px solid var(--link);
+  outline-offset: 3px;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Tables */
+table {
+  border-collapse: collapse;
+}
+
+table,
+th,
+td {
+  border-color: var(--border);
+}
+
+th,
+td {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  vertical-align: top;
+}
+
+/* Error text */
+.error {
+  color: var(--error);
+}
+
+/* ---------------------------
+   Skip link
+---------------------------- */
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: 10px;
+  background: var(--panel-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: 12px;
+  z-index: 10000;
+}
+
+.skip-link:focus {
+  left: 12px;
+}
+
+.skip-link:focus-visible {
+  outline: 3px solid var(--link);
+  outline-offset: 3px;
+}
+
+/* ---------------------------
+   Title bar + theme toggle
+---------------------------- */
+.page-title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  flex-wrap: wrap; /* improved for narrow screens */
+  padding: 8px 12px;
+}
+
+.page-title-bar h1 {
+  margin: 0;
+}
+
+/* Toggle switch (HTML: input + .switch-ui + .switch-text) */
+.theme-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  user-select: none;
+  cursor: pointer;
+}
+
+/* Hide checkbox accessibly without affecting layout */
+.theme-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.switch-ui {
+  width: 56px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+  transition: background 160ms ease, box-shadow 160ms ease;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.switch-ui::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: transform 160ms ease;
+}
+
+.theme-switch input:checked + .switch-ui {
+  background: var(--link);
+  box-shadow: inset 0 0 0 1px var(--link);
+}
+
+.theme-switch input:checked + .switch-ui::after {
+  transform: translateX(24px);
+}
+
+.theme-switch input:focus-visible + .switch-ui {
+  outline: 3px solid var(--link);
+  outline-offset: 3px;
+}
+
+.switch-text {
+  white-space: nowrap;
+  font-size: 16px;
+}
+
+/* ---------------------------
+   Auth actions + buttons
+---------------------------- */
+.auth-actions {
+  padding: 0 12px 8px 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  text-decoration: none;
+  font-weight: 600;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+button.btn {
+  font: inherit;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:focus-visible {
+  outline: 3px solid var(--link);
+  outline-offset: 3px;
+}
+
+/* Disabled state (used by follow/unfollow while request is in flight) */
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text);
+}
+
+.btn-primary {
+  background: var(--link);
+  border-color: var(--link);
+  color: var(--primary-text);
+}
+
+/* ---------------------------
+   Panels (shared)
+---------------------------- */
+.panel {
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  padding: 12px;
+  border-radius: 18px;
+}
+
+.panel ul {
+  margin: 8px 0 0 18px;
+}
+
+.panel h2,
+.panel h3 {
+  margin-top: 0;
+}
+
+/* ---------------------------
+   Home / Search
+---------------------------- */
+.home-layout {
+  padding: 12px;
+  max-width: 920px;
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+}
+
+.search-form label {
+  display: block;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.search-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.search-row input[type="text"] {
+  flex: 1;
+  min-width: 240px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.search-row input[type="text"]::placeholder {
+  opacity: 0.75;
+}
+
+.search-row input[type="text"]:focus-visible {
+  outline: 3px solid var(--link);
+  outline-offset: 3px;
+}
+
+/* ---------------------------
+   Explore layout
+---------------------------- */
+.explore-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr 320px;
+  gap: 12px;
+  padding: 12px;
+}
+
+.explore-filters,
+.list-view {
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  padding: 10px;
+  border-radius: 18px;
+}
+
+/* Filters: vertical layout */
+.explore-filters label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.explore-filters input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+/* Responsive fallback */
+@media (max-width: 980px) {
+  .explore-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------
+   Map styling (theme-aware)
+---------------------------- */
+.explore-map {
+  height: 500px; /* Keeps Leaflet visible */
+  width: 100%;
+  border: 1px solid var(--map-border);
+  background: var(--bg);
+  border-radius: 18px;
+}
+
+/* ---------------------------
+   Welcome modal (poster)
+---------------------------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 9999;
+}
+
+/* Ensure hidden always hides even if a reset overrides [hidden] */
+.modal-overlay[hidden] {
+  display: none !important;
+}
+
+.modal {
+  width: min(720px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--panel-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  padding: 14px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.modal-poster {
+  width: 100%;
+  height: auto;
+  max-height: 65vh;
+  object-fit: contain;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.modal-subtitle {
+  margin: 10px 2px 0 2px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* ---------------------------
+   Reduced motion
+---------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .switch-ui,
+  .switch-ui::after {
+    transition: none !important;
+  }
+
+  .btn:hover {
+    transform: none !important;
+  }
 }

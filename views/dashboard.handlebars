@@ -1,0 +1,51 @@
+<header class="page-title-bar">
+  <h1>Your Dashboard</h1>
+  <nav class="auth-actions" aria-label="Dashboard actions">
+    <a class="btn btn-ghost" href="/explore">Back to Explore</a>
+
+    <form method="post" action="/logout" style="display:inline;">
+      <input type="hidden" name="csrfToken" value="{{csrfToken}}">
+      <button type="submit" class="btn btn-primary">Logout</button>
+    </form>
+  </nav>
+</header>
+
+<p>Signed in as <strong>{{user.username}}</strong></p>
+
+<section>
+  <h2>Followed Stations</h2>
+  {{#if hasFollowed}}
+    <ul>
+      {{#each followedStations}}
+        <li>
+          <strong>{{stationName}}</strong>
+          (ID: {{stationId}})
+          — Accessible: {{adaStatus}}
+          — Routes: {{routes}}
+        </li>
+      {{/each}}
+    </ul>
+  {{else}}
+    <p>You are not following any stations yet.</p>
+  {{/if}}
+</section>
+
+<hr>
+
+<section>
+  <h2>Your Reports</h2>
+  {{#if hasReports}}
+    <ul>
+      {{#each reports}}
+        <li>
+          <strong>{{reportId}}</strong>
+          — {{targetType}}:{{targetId}}
+          — {{text}}
+          — Status: {{status}}
+        </li>
+      {{/each}}
+    </ul>
+  {{else}}
+    <p>You have not submitted any reports yet.</p>
+  {{/if}}
+</section>

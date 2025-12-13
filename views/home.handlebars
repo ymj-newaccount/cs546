@@ -1,0 +1,140 @@
+{{!-- views/home.handlebars --}}
+{{!-- Home + Search page:
+     GET  /
+     GET  /search?q=...
+     Assumes `user` and `csrfToken` are available via res.locals.
+--}}
+
+<a class="skip-link" href="#main-content">Skip to main content</a>
+
+<header class="page-title-bar">
+  <h1>CommuteAble NYC</h1>
+
+  <label class="theme-switch">
+    <input id="theme-toggle" type="checkbox" aria-label="Toggle dark mode">
+    <span class="switch-ui" aria-hidden="true"></span>
+    <span class="switch-text">Night mode</span>
+  </label>
+</header>
+
+{{#if user}}
+  <p style="padding: 0 12px;">
+    Signed in as <strong>{{user.username}}</strong>
+  </p>
+
+  <nav class="auth-actions" aria-label="Account actions">
+    <a class="btn btn-ghost" href="/dashboard">Dashboard</a>
+    <a class="btn btn-ghost" href="/explore">Explore</a>
+
+    <form method="post" action="/logout" style="display:inline;">
+      <input type="hidden" name="csrfToken" value="{{csrfToken}}">
+      <button type="submit" class="btn btn-primary">Logout</button>
+    </form>
+  </nav>
+{{else}}
+  <nav class="auth-actions" aria-label="Authentication">
+    <a class="btn btn-ghost" href="/explore">Explore</a>
+    <a class="btn btn-ghost" href="/register">Register</a>
+    <a class="btn btn-primary" href="/login">Login</a>
+  </nav>
+{{/if}}
+
+<main id="main-content" class="home-layout">
+  <section class="panel" aria-labelledby="search-title">
+    <h2 id="search-title">Search</h2>
+
+    <p id="search-help">
+      Search for a subway station or a crossing feature (APS / curb ramp).
+      Examples: <strong>R01</strong>, <strong>Times Sq</strong>, <strong>APS123</strong>, <strong>Ramp456</strong>.
+    </p>
+
+    <form method="get" action="/search" class="search-form" role="search" aria-label="Search for stations or crossings">
+      <label for="q">Station name / Station ID / APS ID / Ramp ID</label>
+
+      <div class="search-row">
+        <input
+          id="q"
+          name="q"
+          type="text"
+          value="{{q}}"
+          maxlength="80"
+          required
+          autocomplete="off"
+          autocapitalize="none"
+          autocorrect="off"
+          spellcheck="false"
+          inputmode="search"
+          placeholder="e.g., R01 or Times Sq"
+          aria-describedby="search-help{{#if error}} search-error{{/if}}"
+          aria-invalid="{{#if error}}true{{else}}false{{/if}}"
+        >
+
+        <button class="btn btn-primary" type="submit">Search</button>
+        <a class="btn btn-ghost" href="/explore">Explore map</a>
+      </div>
+    </form>
+
+    {{#if error}}
+      <p id="search-error" class="error" role="alert">{{error}}</p>
+    {{/if}}
+  </section>
+
+  {{#if searched}}
+    <section class="panel" aria-label="Search results" aria-live="polite">
+      <h2>Results for “{{q}}”</h2>
+
+      {{#if hasAny}}
+        {{#if hasStations}}
+          <section aria-labelledby="stations-results">
+            <h3 id="stations-results">Stations</h3>
+            <ul>
+              {{#each stations}}
+                <li>
+                  <a href="/station/{{stationId}}">
+                    {{#if stationName}}{{stationName}}{{else}}{{stationId}}{{/if}}
+                  </a>
+                  {{#if borough}} — {{borough}}{{/if}}
+                  {{#if adaStatus}} ({{adaStatus}}){{/if}}
+                </li>
+              {{/each}}
+            </ul>
+          </section>
+        {{/if}}
+
+        {{#if hasAps}}
+          <section aria-labelledby="aps-results">
+            <h3 id="aps-results">APS Crossings</h3>
+            <ul>
+              {{#each apsList}}
+                <li>
+                  <a href="/crossing/{{apsId}}">APS {{apsId}}</a>
+                  {{#if location.address}} — {{location.address}}{{/if}}
+                  {{#if location.borough}} ({{location.borough}}){{/if}}
+                </li>
+              {{/each}}
+            </ul>
+          </section>
+        {{/if}}
+
+        {{#if hasRamps}}
+          <section aria-labelledby="ramps-results">
+            <h3 id="ramps-results">Curb Ramps</h3>
+            <ul>
+              {{#each ramps}}
+                <li>
+                  <a href="/crossing/{{rampId}}">Ramp {{rampId}}</a>
+                  {{#if streetName}} — {{streetName}}{{/if}}
+                  {{#if borough}} ({{borough}}){{/if}}
+                </li>
+              {{/each}}
+            </ul>
+          </section>
+        {{/if}}
+      {{else}}
+        <p>
+          No matches found. Try the <a href="/explore">Explore map</a> filters instead.
+        </p>
+      {{/if}}
+    </section>
+  {{/if}}
+</main>
