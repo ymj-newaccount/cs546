@@ -82,6 +82,12 @@ function normalizeReputation(value, def = DEFAULT_REPUTATION) {
   return n;
 }
 
+function normalizeCrossingKind(kind) {
+  const k = assertNonEmptyString(kind, 'kind').toLowerCase();
+  if (!['aps', 'ramp'].includes(k)) throw makeError('kind must be aps or ramp', 400);
+  return k;
+}
+
 async function usersCollection(dbParam) {
   const db = dbParam || (await getDb());
   const col = db.collection('users');
@@ -104,17 +110,36 @@ async function usersCollection(dbParam) {
 
 function sanitizeUser(doc) {
   if (!doc) return doc;
+
+  // Clone to avoid mutating the MongoDB document reference
   const out = { ...doc };
 
+  // Normalize _id to string for consistent consumption in routes/views
   if (out._id && typeof out._id === 'object' && typeof out._id.toString === 'function') {
     out._id = out._id.toString();
   }
 
+  // Normalize reputation to a safe default
   out.reputation = normalizeReputation(out.reputation, DEFAULT_REPUTATION);
 
+  // Ensure bookmarks and alerts exist as arrays (defensive for legacy/dirty data)
+  if (!Array.isArray(out.bookmarks)) out.bookmarks = [];
+  if (!Array.isArray(out.alerts)) out.alerts = [];
+
+  // Ensure crossingBookmarks has the expected plain-object shape
+  // and always contains array fields for both aps and ramp.
+  if (!isPlainObject(out.crossingBookmarks)) {
+    out.crossingBookmarks = { aps: [], ramp: [] };
+  } else {
+    if (!Array.isArray(out.crossingBookmarks.aps)) out.crossingBookmarks.aps = [];
+    if (!Array.isArray(out.crossingBookmarks.ramp)) out.crossingBookmarks.ramp = [];
+  }
+
+  // Remove sensitive/internal fields
   delete out.hashedPassword;
   delete out.usernameLower;
   delete out.emailLower;
+
   return out;
 }
 
@@ -160,6 +185,8 @@ export async function createUser(username, email, password) {
     role,
     reputation: DEFAULT_REPUTATION,
     bookmarks: [],
+    // Stores followed crossings by kind (aps/ramp)
+    crossingBookmarks: { aps: [], ramp: [] },
     alerts: [],
     createdAt: now,
     updatedAt: now
@@ -235,11 +262,53 @@ export async function removeBookmark(userId, stationId) {
   return await getUserById(_id);
 }
 
+// Add a crossing bookmark (idempotent) under crossingBookmarks.<kind>
+export async function addCrossingBookmark(userId, kind, crossingId) {
+  const _id = ensureObjectId(userId, 'userId');
+  const k = normalizeCrossingKind(kind);
+  const cid = assertNonEmptyString(String(crossingId ?? ''), 'crossingId');
+
+  const col = await usersCollection();
+  const path = `crossingBookmarks.${k}`;
+
+  const result = await col.updateOne(
+    { _id },
+    { $addToSet: { [path]: cid }, $set: { updatedAt: new Date() } }
+  );
+
+  if (result.matchedCount === 0)
+  {
+    throw makeError('User not found', 404);
+  }
+  return await getUserById(_id);
+}
+
+// Remove a crossing bookmark from crossingBookmarks.<kind>
+export async function removeCrossingBookmark(userId, kind, crossingId) {
+  const _id = ensureObjectId(userId, 'userId');
+  const k = normalizeCrossingKind(kind);
+  const cid = assertNonEmptyString(String(crossingId ?? ''), 'crossingId');
+
+  const col = await usersCollection();
+  const path = `crossingBookmarks.${k}`;
+
+  const result = await col.updateOne(
+    { _id },
+    { $pull: { [path]: cid }, $set: { updatedAt: new Date() } }
+  );
+
+  if (result.matchedCount === 0)
+  {
+    throw makeError('User not found', 404);
+  }
+  return await getUserById(_id);
+}
+
 export async function setAlerts(userId, alertsArray) {
   const _id = ensureObjectId(userId, 'userId');
 
   if (!Array.isArray(alertsArray)) throw makeError('alerts must be an array', 400);
-  if (alertsArray.length > MAX_ALERTS * 2) throw makeError('alerts array is too large', 400); // pre-trim guard
+  if (alertsArray.length > MAX_ALERTS * 2) throw makeError('alerts array is too large', 400);
 
   const normalizedAlerts = alertsArray
     .map((a, idx) => {
@@ -247,7 +316,6 @@ export async function setAlerts(userId, alertsArray) {
       if (isPlainObject(a)) return a;
       throw makeError(`alerts[${idx}] must be a string or a plain object`, 400);
     })
-    // Drop empty strings after trim (keeps objects intact)
     .filter((a) => (typeof a === 'string' ? a.length > 0 : true));
 
   if (normalizedAlerts.length > MAX_ALERTS) {
@@ -313,9 +381,7 @@ export async function adjustReputation(userId, delta, options = {}) {
   const col = await usersCollection();
   const now = new Date();
 
-  // Pipeline update keeps it atomic and supports clamping.
-  // next = max(MIN_REPUTATION, (ifNull(reputation, DEFAULT_REPUTATION) + delta))
-  // if max provided: next = min(max, next)
+  // Use an aggregation pipeline update for atomic arithmetic + clamping
   const base = { $ifNull: ['$reputation', DEFAULT_REPUTATION] };
   const added = { $add: [base, d] };
   let nextRep = { $max: [MIN_REPUTATION, added] };

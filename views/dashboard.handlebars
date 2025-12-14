@@ -1,5 +1,8 @@
+{{!-- views/dashboard.handlebars --}}
+
 <header class="page-title-bar">
   <h1>Your Dashboard</h1>
+
   <nav class="auth-actions" aria-label="Dashboard actions">
     <a class="btn btn-ghost" href="/explore">Back to Explore</a>
 
@@ -10,42 +13,154 @@
   </nav>
 </header>
 
-<p>Signed in as <strong>{{user.username}}</strong></p>
+<p>
+  Signed in as <strong>{{user.username}}</strong>
+  {{#if user.role}}<span class="muted"> ({{user.role}})</span>{{/if}}
+</p>
 
-<section>
-  <h2>Followed Stations</h2>
-  {{#if hasFollowed}}
-    <ul>
-      {{#each followedStations}}
-        <li>
-          <strong>{{stationName}}</strong>
-          (ID: {{stationId}})
-          — Accessible: {{adaStatus}}
-          — Routes: {{routes}}
-        </li>
-      {{/each}}
-    </ul>
-  {{else}}
-    <p>You are not following any stations yet.</p>
-  {{/if}}
-</section>
+<main style="padding:12px;">
+  <section aria-labelledby="followed-stations-title">
+    <h2 id="followed-stations-title">Followed Stations</h2>
 
-<hr>
+    {{#if hasFollowed}}
+      <ul>
+        {{#each followedStations}}
+          <li>
+            <div>
+              <strong>
+                {{#if link}}
+                  <a href="{{link}}">{{stationName}}</a>
+                {{else}}
+                  {{stationName}}
+                {{/if}}
+              </strong>
+              <span class="muted"> (ID: {{stationId}})</span>
+            </div>
 
-<section>
-  <h2>Your Reports</h2>
-  {{#if hasReports}}
-    <ul>
-      {{#each reports}}
-        <li>
-          <strong>{{reportId}}</strong>
-          — {{targetType}}:{{targetId}}
-          — {{text}}
-          — Status: {{status}}
-        </li>
-      {{/each}}
-    </ul>
-  {{else}}
-    <p>You have not submitted any reports yet.</p>
-  {{/if}}
-</section>
+            <div class="muted">
+              Accessible: {{adaStatus}}
+              {{#if routes}}
+                <span aria-hidden="true"> · </span>
+                Routes:
+                {{#if routes.length}}
+                  {{#each routes}}
+                    <span class="tag">{{this}}</span>
+                  {{/each}}
+                {{else}}
+                  None
+                {{/if}}
+              {{/if}}
+            </div>
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p>You are not following any stations yet.</p>
+    {{/if}}
+  </section>
+
+  <hr>
+
+  <section aria-labelledby="followed-crossings-title">
+    <h2 id="followed-crossings-title">Followed Crossings</h2>
+
+    {{#if hasFollowedCrossings}}
+      <ul>
+        {{#each followedCrossings}}
+          <li>
+            <div>
+              <strong>
+                {{#if link}}
+                  <a href="{{link}}">{{label}}</a>
+                {{else}}
+                  {{label}}
+                {{/if}}
+              </strong>
+              <span class="muted"> ({{kind}}: {{id}})</span>
+              {{#if borough}}
+                <span class="muted"> — {{borough}}</span>
+              {{/if}}
+            </div>
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p>You are not following any crossings yet.</p>
+    {{/if}}
+  </section>
+
+  <hr>
+
+  <section aria-labelledby="feed-title">
+    <h2 id="feed-title">Your Feed</h2>
+    <p class="muted">Recent reports for your followed stations and crossings.</p>
+
+    {{#if hasFeed}}
+      <ul>
+        {{#each feed}}
+          <li>
+            <div>
+              <strong>{{reportId}}</strong>
+              {{#if targetLink}}
+                — <a href="{{targetLink}}">{{targetType}}:{{targetId}}</a>
+              {{else}}
+                — {{targetType}}:{{targetId}}
+              {{/if}}
+            </div>
+
+            <div>{{text}}</div>
+
+            <div class="muted">
+              {{#if createdAt}}Created: {{createdAt}}{{/if}}
+              {{#if status}}
+                {{#if createdAt}}<span aria-hidden="true"> · </span>{{/if}}
+                Status: {{status}}
+              {{/if}}
+              {{#if createdBy.username}}
+                <span aria-hidden="true"> · </span>
+                By: {{createdBy.username}}
+              {{/if}}
+            </div>
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p>No recent reports for your followed stations or crossings.</p>
+    {{/if}}
+  </section>
+
+  <hr>
+
+  <section aria-labelledby="your-reports-title">
+    <h2 id="your-reports-title">Your Reports</h2>
+
+    {{#if hasReports}}
+      <ul>
+        {{#each reports}}
+          <li>
+            <div>
+              <strong>{{reportId}}</strong>
+              {{#if targetLink}}
+                — <a href="{{targetLink}}">{{targetType}}:{{targetId}}</a>
+              {{else}}
+                — {{targetType}}:{{targetId}}
+              {{/if}}
+            </div>
+
+            <div>{{text}}</div>
+
+            <div class="muted">
+              {{#if createdAt}}Created: {{createdAt}}{{/if}}
+              {{#if status}}
+                {{#if createdAt}}<span aria-hidden="true"> · </span>{{/if}}
+                Status: {{status}}
+              {{/if}}
+            </div>
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p>You have not submitted any reports yet.</p>
+    {{/if}}
+  </section>
+</main>

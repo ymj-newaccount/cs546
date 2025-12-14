@@ -3,6 +3,7 @@
 // - Attempts to resolve :id as an APS record first, then as a curb ramp record
 // - Loads nearby APS + curb ramps (simple in-memory haversine filtering via data/locations.js)
 // - Loads community reports for the resolved target (targetType = "aps" or "ramp")
+// - Computes whether the logged-in user is following this crossing (isBookmarked)
 // NOTE: If APS IDs and Ramp IDs can collide (same numeric ID), this route will prefer APS.
 //       A more explicit design would be /crossing/:kind/:id (e.g., /crossing/aps/123).
 
@@ -11,6 +12,7 @@ import { getAPSById } from '../data/aps.js';
 import { getCurbRampById } from '../data/curbRamps.js';
 import * as locationData from '../data/locations.js';
 import { getReportsForTarget } from '../data/reports.js';
+import { getUserById } from '../data/users.js';
 
 const router = express.Router();
 
@@ -80,9 +82,7 @@ router.get('/:id', async (req, res, next) => {
 
     const [nearbyAPS, nearbyRamps] = await Promise.all([
       hasCoords ? locationData.getNearbyAPS({ lat, lng, radiusMeters: NEARBY_RADIUS_METERS }) : [],
-      hasCoords
-        ? locationData.getNearbyCurbRamps({ lat, lng, radiusMeters: NEARBY_RADIUS_METERS })
-        : []
+      hasCoords ? locationData.getNearbyCurbRamps({ lat, lng, radiusMeters: NEARBY_RADIUS_METERS }) : []
     ]);
 
     // Reports are attached to the resolved kind (compatible with your existing /api/reports)
@@ -91,15 +91,47 @@ router.get('/:id', async (req, res, next) => {
       includeHidden: false
     });
 
+    // Determine whether the logged-in user is following this crossing
+    let isBookmarked = false;
+    let sessionUserId = null
+    if(req.session && req.session.user && req.session.user._id)
+    {
+      sessionUserId = req.session.user._id;
+    }
+
+    if (sessionUserId) {
+      try {
+        const u = await getUserById(String(sessionUserId));
+        let arr;
+        if(u && u.crossingBookmarks && u.crossBookmarks[kind])
+        {
+          arr = u.crossingBookmarks[kind];
+        }
+        else
+        {
+          arr = undefined;
+        }
+        isBookmarked = Array.isArray(arr) && arr.includes(String(id));
+      } catch {
+        isBookmarked = false;
+      }
+    }
+
     return res.render('crossing', {
       title: kind === 'aps' ? `Crossing (APS ${id})` : `Crossing (Ramp ${id})`,
 
       id,
       kind,
 
+      // Pass session user for templates that conditionally render authenticated UI
+      user: req.session?.user || null,
+
       // Provide both objects to the template; one will be null
       aps,
       ramp,
+
+      // Follow state for this crossing
+      isBookmarked,
 
       // Useful for conditional template messages
       hasCoords,

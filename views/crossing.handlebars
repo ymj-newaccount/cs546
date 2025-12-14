@@ -11,6 +11,7 @@
        - nearbyRamps, hasNearbyRamps
        - reports, hasReports
        - reportTargetType, reportTargetId
+       - isBookmarked (boolean)   // whether logged-in user follows this crossing
 
      Globals (from middleware / layout):
        - user (null or { _id, username, ... })
@@ -163,8 +164,23 @@
       {{/unless}}
     </dl>
 
-    {{!-- Quick action: open report form targeted to this crossing --}}
     {{#if user}}
+      {{!-- Follow/unfollow crossing (AJAX) --}}
+      <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button
+          id="follow-crossing-toggle"
+          type="button"
+          class="btn {{#if isBookmarked}}btn-primary{{else}}btn-ghost{{/if}}"
+          data-kind="{{kind}}"
+          data-id="{{id}}"
+          aria-pressed="{{#if isBookmarked}}true{{else}}false{{/if}}"
+        >
+          {{#if isBookmarked}}Unfollow crossing{{else}}Follow crossing{{/if}}
+        </button>
+        <span id="follow-status" role="status" aria-live="polite"></span>
+      </div>
+
+      {{!-- Quick action: open report form targeted to this crossing --}}
       <div style="margin-top:10px;">
         <button
           type="button"
@@ -178,7 +194,7 @@
       </div>
     {{else}}
       <p style="margin-top:10px;">
-        Log in to submit a report.
+        Log in to follow this crossing and submit a report.
         <a href="/login">Login</a>
       </p>
     {{/if}}
@@ -330,6 +346,53 @@
                 </span>
               {{/if}}
             </div>
+
+            {{!-- Duplicate flagging (community moderation signal) --}}
+            <div class="report-dupes" data-report-id="{{reportId}}" style="margin-top:6px;">
+              <span class="dup-metrics" aria-label="Duplicate flags summary">
+                Duplicates:
+                <span class="dup-count">
+                  {{#if duplicateFlags}}{{duplicateFlags.flagCount}}{{else}}0{{/if}}
+                </span>
+                <span aria-hidden="true"> · </span>
+                Weight:
+                <span class="dup-weight">
+                  {{#if duplicateFlags}}{{duplicateFlags.weightTotal}}{{else}}0{{/if}}
+                </span>
+              </span>
+
+              {{#if ../user}}
+                <div style="margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                  {{!-- sr-only requires CSS in main.css --}}
+                  <label class="sr-only" for="dup-canonical-{{reportId}}">Canonical report (optional)</label>
+                  <select
+                    id="dup-canonical-{{reportId}}"
+                    class="dup-canonical"
+                    data-report-id="{{reportId}}"
+                    aria-label="Select canonical report (optional)"
+                  >
+                    <option value="">Select canonical (optional)</option>
+                    {{!-- Options are populated by JS based on reports currently on the page --}}
+                  </select>
+
+                  <button
+                    type="button"
+                    class="btn btn-ghost dup-btn"
+                    data-report-id="{{reportId}}"
+                    aria-pressed="false"
+                    aria-label="Flag this report as a duplicate"
+                  >
+                    Flag duplicate
+                  </button>
+
+                  <span class="dup-status" role="status" aria-live="polite"></span>
+                </div>
+              {{else}}
+                <span class="dup-muted" style="margin-left:10px;">
+                  <a href="/login">Login</a> to flag duplicates
+                </span>
+              {{/if}}
+            </div>
           </li>
         {{/each}}
       </ul>
@@ -392,9 +455,11 @@
 </main>
 
 {{!-- Inline page JS:
+     - Follow/unfollow (AJAX -> /api/crossings/:kind/:id/follow|unfollow)
      - Report submission (AJAX -> /api/reports)
      - Report target switching (this crossing / nearby APS / nearby ramps) via buttons above
      - Report voting (AJAX -> /api/reports/:reportId/vote)
+     - Duplicate flagging (AJAX -> /api/reports/:reportId/duplicate)
 --}}
 <script>
 (() => {
@@ -445,6 +510,92 @@
     return text ? String(text) : '';
   }
 
+  // -------- Page identifiers --------
+  const crossingKind = (document.getElementById('crossing-kind')?.textContent || '').trim();
+  const crossingId = (document.getElementById('crossing-id')?.textContent || '').trim();
+
+  // -------- Follow/unfollow crossing --------
+  const followBtn = document.getElementById('follow-crossing-toggle');
+  const followStatus = document.getElementById('follow-status');
+
+  function setFollowStatus(msg) {
+    if (!followStatus) return;
+    followStatus.textContent = msg ? String(msg) : '';
+  }
+
+  function applyFollowUI(followed) {
+    if (!followBtn) return;
+    const isFollowed = Boolean(followed);
+
+    followBtn.setAttribute('aria-pressed', isFollowed ? 'true' : 'false');
+    followBtn.textContent = isFollowed ? 'Unfollow crossing' : 'Follow crossing';
+
+    followBtn.classList.toggle('btn-primary', isFollowed);
+    followBtn.classList.toggle('btn-ghost', !isFollowed);
+  }
+
+  async function postCrossingFollow(kind, id, shouldFollow) {
+    if (!csrfToken) throw new Error('Missing CSRF token (check <meta name="csrf-token">).');
+
+    const action = shouldFollow ? 'follow' : 'unfollow';
+    const url = `/api/crossings/${encodeURIComponent(String(kind))}/${encodeURIComponent(String(id))}/${action}`;
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      }
+    });
+
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+
+    return resp.json().catch(() => ({}));
+  }
+
+  if (followBtn) {
+    // Normalize initial state to match server-rendered aria-pressed
+    const initialFollowed = followBtn.getAttribute('aria-pressed') === 'true';
+    applyFollowUI(initialFollowed);
+
+    followBtn.addEventListener('click', async () => {
+      clearPageError();
+      setFollowStatus('');
+
+      const kind = String(followBtn.dataset.kind || crossingKind || '').trim();
+      const id = String(followBtn.dataset.id || crossingId || '').trim();
+
+      if (!kind || !id) {
+        showPageError('Missing crossing identifiers.');
+        return;
+      }
+
+      const isFollowed = followBtn.getAttribute('aria-pressed') === 'true';
+      const nextState = !isFollowed;
+
+      followBtn.disabled = true;
+      setFollowStatus('Saving...');
+
+      try {
+        const data = await postCrossingFollow(kind, id, nextState);
+
+        // Prefer server response if present
+        const followed = typeof data.followed === 'boolean' ? data.followed : nextState;
+        applyFollowUI(followed);
+        setFollowStatus(followed ? 'Followed.' : 'Unfollowed.');
+      } catch (err) {
+        showPageError(err?.message || String(err));
+        setFollowStatus('');
+      } finally {
+        followBtn.disabled = false;
+      }
+    });
+  }
+
   // -------- Report target switching + submit --------
   const reportForm = document.getElementById('report-form');
   const reportTargetLabel = document.getElementById('report-target-label');
@@ -473,10 +624,6 @@
       reportTargetLabel.textContent = `Reporting: ${safeLabel} (${type}:${id})`;
     }
   }
-
-  // Cache defaults from server-rendered hidden inputs (no Handlebars-in-JS injection).
-  const crossingKind = (document.getElementById('crossing-kind')?.textContent || '').trim();
-  const crossingId = (document.getElementById('crossing-id')?.textContent || '').trim();
 
   const kindFallbackType = (crossingKind === 'aps' || crossingKind === 'ramp') ? crossingKind : '';
   const defaultTargetType = reportTargetType?.value || kindFallbackType;
@@ -547,10 +694,15 @@
     const initialScore =
       (rep?.votes && (rep.votes.score ?? rep.votes.weightedScore ?? rep.votes.rawScore)) ?? 0;
 
+    const initialDupCount = (rep?.duplicateFlags && Number(rep.duplicateFlags.flagCount)) || 0;
+    const initialDupWeight = (rep?.duplicateFlags && Number(rep.duplicateFlags.weightTotal)) || 0;
+
     const li = document.createElement('li');
     li.className = 'report-item';
     li.dataset.reportId = rid;
-    
+
+    // Note: This builder is only used when the user is logged in (report form exists),
+    // so we always include interactive vote + duplicate widgets here.
     li.innerHTML = `
       <div class="report-main">
         <strong>${escapeHtml(rid)}</strong>
@@ -561,11 +713,42 @@
         ${createdAt ? ` — ${createdAt}` : ''}
         ${status ? ` — status: ${status}` : ''}
       </div>
+
       <div class="report-votes" data-report-id="${escapeHtml(rid)}">
         <span class="vote-score" aria-label="Weighted score">${escapeHtml(formatScore(initialScore))}</span>
         <button type="button" class="btn btn-ghost vote-btn js-vote-up" data-vote="1" aria-pressed="false" aria-label="Upvote">↑</button>
         <button type="button" class="btn btn-ghost vote-btn js-vote-down" data-vote="-1" aria-pressed="false" aria-label="Downvote">↓</button>
         <span class="vote-status" role="status" aria-live="polite"></span>
+      </div>
+
+      <div class="report-dupes" data-report-id="${escapeHtml(rid)}" style="margin-top:6px;">
+        <span class="dup-metrics" aria-label="Duplicate flags summary">
+          Duplicates: <span class="dup-count">${escapeHtml(String(Math.max(0, Math.trunc(initialDupCount))))}</span>
+          <span aria-hidden="true"> · </span>
+          Weight: <span class="dup-weight">${escapeHtml(formatScore(initialDupWeight))}</span>
+        </span>
+
+        <div style="margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <label class="sr-only" for="dup-canonical-${escapeHtml(rid)}">Canonical report (optional)</label>
+          <select
+            id="dup-canonical-${escapeHtml(rid)}"
+            class="dup-canonical"
+            data-report-id="${escapeHtml(rid)}"
+            aria-label="Select canonical report (optional)"
+          >
+            <option value="">Select canonical (optional)</option>
+          </select>
+
+          <button
+            type="button"
+            class="btn btn-ghost dup-btn"
+            data-report-id="${escapeHtml(rid)}"
+            aria-pressed="false"
+            aria-label="Flag this report as a duplicate"
+          >Flag duplicate</button>
+
+          <span class="dup-status" role="status" aria-live="polite"></span>
+        </div>
       </div>
     `;
 
@@ -636,7 +819,7 @@
 
         }
 
-        // Prepend the new report to the list for instant feedback (with full vote widget).
+        // Prepend the new report to the list for instant feedback (with vote + duplicate widgets).
         const list = document.getElementById('reports-list');
         const empty = document.getElementById('reports-empty');
         if (list && data?.report) {
@@ -646,13 +829,27 @@
           if (li) {
             list.prepend(li);
 
+            // Rebuild canonical dropdown options for ALL reports (new report becomes a candidate).
+            populateDupSelects();
+
             // Best-effort: initialize the newly inserted vote widget.
             if (rid) {
-              const newWidget = li.querySelector('.report-votes[data-report-id]');
-              if (newWidget) {
+              const newVoteWidget = li.querySelector('.report-votes[data-report-id]');
+              if (newVoteWidget) {
                 try {
                   const v = await getVotes(rid);
-                  setVoteWidgetUI(newWidget, v.totals, v.myVote);
+                  setVoteWidgetUI(newVoteWidget, v.totals, v.myVote);
+                } catch (_) {
+                  // Best-effort; ignore
+                }
+              }
+
+              // Best-effort: initialize the newly inserted duplicate widget.
+              const newDupWidget = li.querySelector('.report-dupes[data-report-id]');
+              if (newDupWidget) {
+                try {
+                  const d = await getDup(rid);
+                  setDupWidgetUI(newDupWidget, d.totals, d.myFlag);
                 } catch (_) {
                   // Best-effort; ignore
                 }
@@ -894,6 +1091,301 @@ let previewObjectUrl = "";
     }
   });
 
+  // -------- Duplicate flagging --------
+  // The UI supports:
+  // - Flag / Unflag duplicate (button)
+  // - Optional canonical selection (dropdown)
+  // - If already flagged, changing the dropdown updates canonicalReportId via POST
+
+  function setDupStatus(widgetEl, msg) {
+    if (!widgetEl) return;
+    const el = widgetEl.querySelector('.dup-status');
+    if (!el) return;
+    el.textContent = msg ? String(msg) : '';
+  }
+
+  function ensureSelectHasOption(selectEl, value) {
+    if (!selectEl) return;
+    const v = String(value || '').trim();
+    if (!v) return;
+
+    const exists = Array.from(selectEl.options).some((o) => String(o.value) === v);
+    if (exists) return;
+
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = `${v} (not listed)`;
+
+    // Insert after the empty option if possible.
+    const afterEmpty = selectEl.querySelector('option[value=""]');
+    if (afterEmpty && afterEmpty.nextSibling) {
+      selectEl.insertBefore(opt, afterEmpty.nextSibling);
+    } else {
+      selectEl.appendChild(opt);
+    }
+  }
+
+  function setDupWidgetUI(widget, totals, myFlag) {
+    if (!widget) return;
+
+    const countEl = widget.querySelector('.dup-count');
+    const weightEl = widget.querySelector('.dup-weight');
+
+    const flagCount = totals && Number.isFinite(Number(totals.flagCount))
+      ? Math.max(0, Math.trunc(Number(totals.flagCount)))
+      : 0;
+
+    const weightTotal = totals && Number.isFinite(Number(totals.weightTotal))
+      ? Math.max(0, Number(totals.weightTotal))
+      : 0;
+
+    if (countEl) countEl.textContent = String(flagCount);
+    if (weightEl) weightEl.textContent = formatScore(weightTotal);
+
+    if (countEl) countEl.title = `Duplicate flags: ${flagCount}`;
+    if (weightEl) weightEl.title = `Reputation-weighted total: ${formatScore(weightTotal)}`;
+
+    const flagged = Boolean(myFlag && myFlag.flagged === true);
+    const canonical = myFlag && typeof myFlag.canonicalReportId === 'string'
+      ? myFlag.canonicalReportId.trim()
+      : '';
+
+    const btn = widget.querySelector('.dup-btn');
+    const sel = widget.querySelector('.dup-canonical');
+
+    if (btn) {
+      btn.setAttribute('aria-pressed', flagged ? 'true' : 'false');
+      btn.textContent = flagged ? 'Unflag duplicate' : 'Flag duplicate';
+      btn.classList.toggle('btn-primary', flagged);
+      btn.classList.toggle('btn-ghost', !flagged);
+    }
+
+    if (sel) {
+      ensureSelectHasOption(sel, canonical);
+      sel.value = canonical || '';
+    }
+  }
+
+  async function getDup(reportId) {
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/duplicate`;
+    const resp = await fetch(url, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    });
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Duplicate fetch failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  async function postDupFlag(reportId, canonicalReportIdOrEmpty) {
+    if (!csrfToken) throw new Error('Missing CSRF token.');
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/duplicate`;
+
+    // Preserve tri-state semantics:
+    // - If canonical is non-empty: send it
+    // - If canonical is empty: OMIT the field (do not forcibly clear server-side canonical on re-POST)
+    const bodyObj = {};
+    const c = String(canonicalReportIdOrEmpty || '').trim();
+    if (c) bodyObj.canonicalReportId = c;
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      },
+      body: JSON.stringify(bodyObj)
+    });
+
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Duplicate request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  async function postDupCanonical(reportId, canonicalReportIdOrEmpty) {
+    if (!csrfToken) throw new Error('Missing CSRF token.');
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/duplicate`;
+
+    // Canonical update is explicit user intent, so ALWAYS send the field (including empty to clear).
+    const bodyObj = { canonicalReportId: String(canonicalReportIdOrEmpty ?? '') };
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      },
+      body: JSON.stringify(bodyObj)
+    });
+
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Duplicate request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  async function deleteDup(reportId) {
+    if (!csrfToken) throw new Error('Missing CSRF token.');
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/duplicate`;
+    const resp = await fetch(url, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      }
+    });
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Duplicate request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  function getAllReportIdsOnPage() {
+    return Array.from(document.querySelectorAll('.report-item[data-report-id]'))
+      .map((el) => String(el.dataset.reportId || '').trim())
+      .filter(Boolean);
+  }
+
+  // Populate every canonical dropdown with report IDs currently rendered on this page.
+  // Each dropdown excludes its own reportId to prevent selecting itself.
+  function populateDupSelects() {
+    const allIds = getAllReportIdsOnPage();
+    const selects = document.querySelectorAll('.dup-canonical[data-report-id]');
+
+    selects.forEach((sel) => {
+      const myRid = String(sel.dataset.reportId || '').trim();
+      const currentValue = String(sel.value || '');
+
+      // Rebuild options (keep an empty default option).
+      sel.innerHTML = '';
+      const emptyOpt = document.createElement('option');
+      emptyOpt.value = '';
+      emptyOpt.textContent = 'Select canonical (optional)';
+      sel.appendChild(emptyOpt);
+
+      allIds.forEach((rid) => {
+        if (!rid || rid === myRid) return;
+        const opt = document.createElement('option');
+        opt.value = rid;
+        opt.textContent = rid;
+        sel.appendChild(opt);
+      });
+
+      // Restore selection if it is still valid; otherwise keep empty.
+      if (currentValue) {
+        ensureSelectHasOption(sel, currentValue);
+        sel.value = currentValue;
+      }
+    });
+  }
+
+  async function initDupes() {
+    const widgets = document.querySelectorAll('.report-dupes[data-report-id]');
+    for (let i = 0; i < widgets.length; i++) {
+      const w = widgets[i];
+      const reportId = String(w.dataset.reportId || '').trim();
+      if (!reportId) continue;
+
+      try {
+        const data = await getDup(reportId);
+        setDupWidgetUI(w, data.totals, data.myFlag);
+      } catch (_) {
+        // Best-effort; do not block page render if one widget fails.
+      }
+    }
+  }
+
+  // Button click handler: flag/unflag.
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.dup-btn');
+    if (!btn) return;
+
+    const widget = btn.closest('.report-dupes');
+    if (!widget) return;
+
+    const reportId = String(widget.dataset.reportId || btn.dataset.reportId || '').trim();
+    if (!reportId) return;
+
+    clearPageError();
+    setDupStatus(widget, '');
+
+    const sel = widget.querySelector('.dup-canonical');
+    const currentlyFlagged = btn.getAttribute('aria-pressed') === 'true';
+
+    btn.disabled = true;
+    if (sel) sel.disabled = true;
+
+    try {
+      let data;
+      if (currentlyFlagged) {
+        data = await deleteDup(reportId);
+        setDupStatus(widget, 'Duplicate flag removed.');
+      } else {
+        const canonical = sel ? String(sel.value || '') : '';
+        data = await postDupFlag(reportId, canonical);
+        setDupStatus(widget, 'Duplicate flag recorded.');
+      }
+
+      setDupWidgetUI(widget, data.totals, data.myFlag);
+    } catch (err) {
+      showPageError(err?.message || String(err));
+    } finally {
+      btn.disabled = false;
+      if (sel) sel.disabled = false;
+    }
+  });
+
+  // Dropdown change handler: if already flagged, update canonical (including clearing canonical).
+  document.addEventListener('change', async (e) => {
+    const sel = e.target.closest('.dup-canonical');
+    if (!sel) return;
+
+    const widget = sel.closest('.report-dupes');
+    if (!widget) return;
+
+    const btn = widget.querySelector('.dup-btn');
+    if (!btn) return; // not logged in / no button rendered
+
+    const flagged = btn.getAttribute('aria-pressed') === 'true';
+    if (!flagged) return; // only update canonical if the user has already flagged
+
+    const reportId = String(widget.dataset.reportId || sel.dataset.reportId || '').trim();
+    if (!reportId) return;
+
+    clearPageError();
+    setDupStatus(widget, '');
+
+    btn.disabled = true;
+    sel.disabled = true;
+
+    try {
+      const canonical = String(sel.value ?? '');
+      const data = await postDupCanonical(reportId, canonical);
+      setDupStatus(widget, canonical.trim() ? 'Canonical updated.' : 'Canonical cleared.');
+      setDupWidgetUI(widget, data.totals, data.myFlag);
+    } catch (err) {
+      showPageError(err?.message || String(err));
+    } finally {
+      btn.disabled = false;
+      sel.disabled = false;
+    }
+  });
+
+  // Init widgets (order matters: populate canonical choices before applying server state).
+  populateDupSelects();
   initVotes();
+  initDupes();
 })();
 </script>
