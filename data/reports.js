@@ -177,7 +177,8 @@ export async function createReport({ targetType, targetId, text, createdBy }) {
       status: 'open',
       createdAt: now,
       updatedAt: now,
-      createdBy: { userId: createdByUserId, username: createdByUsername }
+      createdBy: { userId: createdByUserId, username: createdByUsername },
+      votes: {upVote: 0, downVote: 0, score: 0, voteCount: 0}
     };
 
     try {
@@ -239,4 +240,55 @@ export async function getReportsForTarget(targetType, targetId, options = {}) {
     .toArray();
 
   return docs.map(sanitizeReport);
+}
+
+//Updates total votes on a report
+export async function updateReportVotes(reportId, total)
+{
+  const id = normalizeReportId(reportId);
+  const repo = await reportsCollection();
+  const today = new Date();
+  let upVote = 0;
+  let downVote = 0;
+  let score = 0;
+  let voteCount = 0;
+
+  if(total)
+  {
+    if(typeof total.upVote === "number")
+    {
+      upVote = total.upVote;
+    }
+    if(typeof total.downVotes === "number")
+    {
+      downVote = total.downVotes;
+    }
+    if(typeof total.score === "number")
+    {
+      score = total.score;
+    }
+    if(typeof total.voteCount === "number")
+    {
+      voteCount = total.voteCount;
+    }
+
+  }
+  const result = await repo.findOneAndUpdate(
+      {reportId: id},
+      { $set: {
+        "votes.upVote": upVote,
+        "votes.downVote": downVote,
+        "votes.score": score,
+        "votes.voteCount": voteCount,
+        updatedAt: today
+      }},
+      {returnDocument: "after"}
+    
+  );
+  if(!result || !result.value)
+  {
+    throw makeError( "Report not found", 404);
+  }
+  return sanitizeReport(result.value);
+
 }

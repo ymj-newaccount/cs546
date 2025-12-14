@@ -275,14 +275,31 @@
     {{#if hasReports}}
       <ul id="reports-list">
         {{#each reports}}
-          <li>
+          <li class="report-item" data-report-id="{{reportId}}">
+          <div class="report-main">
             <strong>{{reportId}}</strong>
             — {{targetType}}:{{targetId}}
             — {{text}}
             {{#if createdBy.username}} — by {{createdBy.username}}{{/if}}
             {{#if createdAt}} — {{createdAt}}{{/if}}
             {{#if status}} — status: {{status}}{{/if}}
-          </li>
+          </div>
+          <div class="report-votes" data-report-id="{{reportId}}">
+            <span class="vote-score" aria-label="Score">0</span>
+            {{#if ../user}}
+            <button type="button" class="btn btn-ghost vote-btn js-vote-up" data-vote="1" aria-pressed="false">
+              ↑
+            </button>
+             <button type="button" class="btn btn-ghost vote-btn js-vote-down" data-vote="-1" aria-pressed="false">
+              ↓
+            </button>
+            {{else}}
+            <span class="vote-muted">
+              <a href="/login">Login</a> to vote
+            </span>
+            {{/if}}
+          </div>
+        </li>
         {{/each}}
       </ul>
     {{else}}
@@ -500,5 +517,248 @@
       }
     });
   }
+  async function getVotes(reportId)
+  {
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/votes`;
+    const resp = await fetch(url, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: {Accept: 'application/json'}
+    });
+    if(!resp.ok)
+    {
+      const msg = (await readErrorPayload(resp)) || `Vote fetch failed (HTTP ${resp.status})`;
+      throw new Error (msg);
+    }
+    return resp.json().catch(()=>({}));
+  }
+  async function postVote(reportId, vote)
+  {
+    if(!csrfToken)
+    {
+      throw new Error("Missing CSRF token");
+    }
+      const url = `/api/reports/${encodeURIComponent(String(reportId))}/vote`;
+      const resp = await fetch(url,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "x-csrf-token": csrfToken
+        },
+        body: JSON.stringify({vote: vote})
+      });
+      if(!resp.ok)
+    {
+      const msg = (await readErrorPayload(resp)) || `Vote fetch failed (HTTP ${resp.status})`;
+      throw new Error (msg);
+    }
+    return resp.json().catch(()=>({}));
+  }
+  async function deleteVote(reportId)
+  {
+    if(!csrfToken)
+    {
+      throw new Error("Missing CSRF token");
+    }
+      const url = `/api/reports/${encodeURIComponent(String(reportId))}/vote`;
+      const resp = await fetch(url,
+      {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: {
+          Accept: "application/json",
+          "x-csrf-token": csrfToken
+        },
+      });
+      if(!resp.ok)
+        {
+          const msg = (await readErrorPayload(resp)) || `Vote fetch failed (HTTP ${resp.status})`;
+          throw new Error (msg);
+        }
+    return resp.json().catch(()=>({}));
+    
+
+  }
+  function setVoteWidgetUI(widget, totals, myVote)
+  {
+    if(!widget)
+    {
+      return;
+    }
+    const scoreEl = widget.querySelector('.vote-score');
+    const upBtn = widget.querySelector('.js-vote-up');
+    const downBtn = widget.querySelector('.js-vote-down');
+    let score = 0;
+    if(totals && typeof totals.score === "number")
+    {
+      score = totals.score
+    }
+    if(scoreEl)
+    {
+      scoreEl.textContent = String(score);
+    }
+    const mine = Number(myVote);
+    {
+      if(upBtn)
+      {
+        if(mine === 1)
+        {
+          upBtn.setAttribute('aria-pressed', 'true');
+        }
+        else
+        {
+          upBtn.setAttribute('aria-pressed', 'false');
+
+        }
+      }
+      if(downBtn)
+      {
+        if(mine === -1)
+        {
+          downBtn.setAttribute('aria-pressed', 'true');
+        }
+        else
+        {
+          downBtn.setAttribute('aria-pressed', 'false');
+
+        }
+      }
+    }
+
+  }
+  function setVoteStatus(widgetEl, msg)
+  {
+    let el = null;
+    if(widgetEl)
+    {
+     
+      if(widgetEl)
+      {
+        el = widgetEl.querySelector('.vote-status');
+      }
+      if(!el)
+      {
+        return;
+      }
+      el.textContent = msg;
+    }
+   
+
+  }
+  async function initVotes()
+  {
+    const widgets = document.querySelectorAll(".report-votes[data-report-id]");
+    for(let i = 0; i < widgets.length; i++)
+    {
+      const w = widgets[i];
+      const reportId = String(w.dataset.reportId).trim();
+      if(!reportId)
+      {
+        continue;
+      }
+      try
+      {
+         const data = await getVotes(reportId);
+         setVoteWidgetUI(w, data.totals, data.myVote);
+      }
+      catch(e)
+      {
+
+      }
+    }
+
+
+   }
+  document.addEventListener('click', async(e) => 
+  {
+    const btn = e.target.closest('.vote-btn');
+    if(!btn)
+    {
+      return;
+    }
+    const widget = btn.closest('.report-votes');
+    if(!widget)
+    {
+      return;
+    }
+    const reportId = String(widget.dataset.reportId).trim();
+    if(!reportId)
+    {
+      return;
+    }
+    if(!csrfToken)
+    {
+      return;
+    }
+    clearPageError();
+    setVoteStatus(widget, "");
+
+    const voteVal = Number(btn.dataset.vote);
+    if(voteVal !== 1 && voteVal !== -1)
+    {
+       return;
+    }
+
+    const upBtn = widget.querySelector('.js-vote-up');
+    const downBtn = widget.querySelector('.js-vote-down');
+
+    const currentUp = upBtn && upBtn.getAttribute('aria-pressed') === "true";
+    const currentDown = downBtn && downBtn.getAttribute('aria-pressed') === "true";
+
+    let currentMyVote = 0;
+    if(currentUp)
+    {
+      currentMyVote = 1;
+    }
+    if(currentDown)
+    {
+      currentMyVote = -1;
+    }
+    if(upBtn)
+    {
+      upBtn.disabled = true;
+    }
+    if(downBtn)
+    {
+      downBtn.disabled = true;
+    }
+    try
+    {
+      let data;
+      if(currentMyVote === voteVal)
+      {
+        data = await deleteVote(reportId);
+        setVoteStatus(widget, "Vote removed.");
+      }
+      else
+      {
+        data = await postVote(reportId, voteVal);
+        setVoteStatus(widget, "Vote recorded.");
+      }
+
+      setVoteWidgetUI(widget, data.totals, data.myVote);
+    }
+    catch(e)
+    {
+      showPageError(String(e));
+    }
+    finally
+    {
+      if(upBtn)
+      {
+        upBtn.disabled = false;
+      }
+      if(downBtn)
+      {
+        downBtn.disabled = false;
+      }
+    }
+
+
+  });
+  initVotes();
 })();
 </script>

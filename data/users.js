@@ -90,6 +90,15 @@ function sanitizeUser(doc) {
   if (!doc) return doc;
   const out = { ...doc };
   if (out._id) out._id = out._id.toString();
+  if(out.reputation === undefined || out.reputation === null)
+  {
+    out.reputation = 1;
+  }
+  out.reputation = Number(out.reputation);
+  if(!Number.isFinite(out.reputation) || out.reputation < 0)
+  {
+    out.reputation = 1;
+  }
   delete out.hashedPassword;
   delete out.usernameLower;
   delete out.emailLower;
@@ -121,6 +130,7 @@ export async function createUser(username, email, password) {
     emailLower,
     hashedPassword,
     role,
+    reputation: 1,
     bookmarks: [],
     alerts: [],
     createdAt: now,
@@ -217,5 +227,26 @@ export async function setAlerts(userId, alertsArray) {
   );
 
   if (result.matchedCount === 0) throw makeError('User not found', 404);
+  return await getUserById(userId);
+}
+
+//update reputation 
+export async function updateReputation(userId, newRep)
+{
+  const id = ensureObjectId(userId, "userId");
+  const rep = Number(newRep);
+  if(!Number.isFinite(rep) || rep < 0)
+  {
+    throw makeError("Reputation must be a number >= 0", 400);
+  }
+  const users = await usersCollection();
+  const result = await users.updateOne(
+    {_id},
+    { $set: {reputation: rep, updatedat: new Date()}}
+  );
+  if(result.matchedCount === 0)
+  {
+    throw makeError("User does not exist", 404);
+  }
   return await getUserById(userId);
 }

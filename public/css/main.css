@@ -640,3 +640,45 @@ button.btn {
     transform: none !important;
   }
 }
+
+/* ---------------------------
+   Reports
+---------------------------- */
+.report-item
+{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--boarder);
+}
+.report-item:first-child
+{
+  border-top: none;
+}
+.report-votes
+{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.vote-score
+{
+  min-width: 28px;
+  text-align: center;
+  font-weight: 600;
+  opacity: 0.90;
+}
+
+.vote-btn[aria-pressed="true"]
+{
+  border-color: var(--link);
+}
+
+.vote-status
+{
+  font-size: 14px;
+  opacity: 0.90;
+}
