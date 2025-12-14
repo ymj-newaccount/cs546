@@ -16,7 +16,7 @@ import reportsRoutes from '../routes/reports.js';
 import stationsApiRoutes from '../routes/stationsApi.js';
 
 // Crossings API routes for follow/unfollow (AJAX)
-import crossingsApiRoutes from '../routes/crossingsApi.js';
+import crossingsApiRoutes from '../routes/crossingApi.js';
 
 // Dashboard page route
 import dashboardRoutes from '../routes/dashboard.js';
