@@ -7,7 +7,13 @@ import bcrypt from 'bcryptjs';
 
 const SALT_ROUNDS = 12;
 
+const DEFAULT_REPUTATION = 1;
+const MIN_REPUTATION = 0;
+
+const MAX_ALERTS = 200;
+
 // Ensure indexes are created only once per process.
+// If index creation fails once, reset so a future call can retry.
 let _indexesReady = null;
 
 function makeError(message, status = 400) {
@@ -55,7 +61,7 @@ function validatePasswordForCreate(password) {
   return p;
 }
 
-// Used for login: do not enforce min length (avoid leaking rules), only enforce bcrypt limit + non-empty
+// Used for login: do not enforce min length, only enforce bcrypt limit + non-empty
 function validatePasswordForLogin(password) {
   const p = assertNonEmptyString(password, 'password');
   const bytes = Buffer.byteLength(p, 'utf8');
@@ -64,13 +70,20 @@ function validatePasswordForLogin(password) {
 }
 
 function ensureObjectId(id, fieldName = 'id') {
-  const s = assertNonEmptyString(id, fieldName);
+  if (id instanceof ObjectId) return id;
+  const s = assertNonEmptyString(String(id ?? ''), fieldName);
   if (!ObjectId.isValid(s)) throw makeError(`${fieldName} is not a valid ObjectId`, 400);
   return new ObjectId(s);
 }
 
-async function usersCollection() {
-  const db = await getDb();
+function normalizeReputation(value, def = DEFAULT_REPUTATION) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < MIN_REPUTATION) return def;
+  return n;
+}
+
+async function usersCollection(dbParam) {
+  const db = dbParam || (await getDb());
   const col = db.collection('users');
 
   if (!_indexesReady) {
@@ -79,30 +92,45 @@ async function usersCollection() {
       await col.createIndex({ emailLower: 1 }, { unique: true });
       await col.createIndex({ createdAt: -1 });
       await col.createIndex({ role: 1 });
-    })();
+    })().catch((err) => {
+      _indexesReady = null;
+      throw err;
+    });
   }
-  await _indexesReady;
 
+  await _indexesReady;
   return col;
 }
 
 function sanitizeUser(doc) {
   if (!doc) return doc;
   const out = { ...doc };
-  if (out._id) out._id = out._id.toString();
-  if(out.reputation === undefined || out.reputation === null)
-  {
-    out.reputation = 1;
+
+  if (out._id && typeof out._id === 'object' && typeof out._id.toString === 'function') {
+    out._id = out._id.toString();
   }
-  out.reputation = Number(out.reputation);
-  if(!Number.isFinite(out.reputation) || out.reputation < 0)
-  {
-    out.reputation = 1;
-  }
+
+  out.reputation = normalizeReputation(out.reputation, DEFAULT_REPUTATION);
+
   delete out.hashedPassword;
   delete out.usernameLower;
   delete out.emailLower;
   return out;
+}
+
+// MongoDB Node Driver compatibility:
+// - Older drivers return { value: <doc>, ... } (ModifyResult)
+// - Newer drivers (v6/v7) default to returning <doc> directly when includeResultMetadata is false
+function unwrapFindOneAndUpdateResult(res) {
+  if (!res) return null;
+
+  const isModifyResult =
+    typeof res === 'object' &&
+    res !== null &&
+    Object.prototype.hasOwnProperty.call(res, 'value') &&
+    Object.prototype.hasOwnProperty.call(res, 'lastErrorObject');
+
+  return isModifyResult ? (res.value ?? null) : res;
 }
 
 // ---------------------------
@@ -116,7 +144,7 @@ export async function createUser(username, email, password) {
 
   const col = await usersCollection();
 
-  // Bootstrap: if no users exist yet, make the first user an admin
+  // Bootstrap: if no users exist yet, make the first user an admin.
   const userCount = await col.estimatedDocumentCount();
   const role = userCount === 0 ? 'admin' : 'user';
 
@@ -130,7 +158,7 @@ export async function createUser(username, email, password) {
     emailLower,
     hashedPassword,
     role,
-    reputation: 1,
+    reputation: DEFAULT_REPUTATION,
     bookmarks: [],
     alerts: [],
     createdAt: now,
@@ -179,7 +207,7 @@ export async function getUserById(id) {
 // Add a station to bookmarks (idempotent)
 export async function addBookmark(userId, stationId) {
   const _id = ensureObjectId(userId, 'userId');
-  const sid = assertNonEmptyString(stationId, 'stationId');
+  const sid = assertNonEmptyString(String(stationId ?? ''), 'stationId');
 
   const col = await usersCollection();
 
@@ -189,12 +217,12 @@ export async function addBookmark(userId, stationId) {
   );
 
   if (result.matchedCount === 0) throw makeError('User not found', 404);
-  return await getUserById(userId);
+  return await getUserById(_id);
 }
 
 export async function removeBookmark(userId, stationId) {
   const _id = ensureObjectId(userId, 'userId');
-  const sid = assertNonEmptyString(stationId, 'stationId');
+  const sid = assertNonEmptyString(String(stationId ?? ''), 'stationId');
 
   const col = await usersCollection();
 
@@ -204,20 +232,27 @@ export async function removeBookmark(userId, stationId) {
   );
 
   if (result.matchedCount === 0) throw makeError('User not found', 404);
-  return await getUserById(userId);
+  return await getUserById(_id);
 }
 
 export async function setAlerts(userId, alertsArray) {
   const _id = ensureObjectId(userId, 'userId');
 
   if (!Array.isArray(alertsArray)) throw makeError('alerts must be an array', 400);
-  if (alertsArray.length > 200) throw makeError('alerts array is too large', 400);
+  if (alertsArray.length > MAX_ALERTS * 2) throw makeError('alerts array is too large', 400); // pre-trim guard
 
-  const normalizedAlerts = alertsArray.map((a, idx) => {
-    if (typeof a === 'string') return a.trim();
-    if (isPlainObject(a)) return a;
-    throw makeError(`alerts[${idx}] must be a string or a plain object`, 400);
-  });
+  const normalizedAlerts = alertsArray
+    .map((a, idx) => {
+      if (typeof a === 'string') return a.trim();
+      if (isPlainObject(a)) return a;
+      throw makeError(`alerts[${idx}] must be a string or a plain object`, 400);
+    })
+    // Drop empty strings after trim (keeps objects intact)
+    .filter((a) => (typeof a === 'string' ? a.length > 0 : true));
+
+  if (normalizedAlerts.length > MAX_ALERTS) {
+    throw makeError(`alerts array is too large (max ${MAX_ALERTS})`, 400);
+  }
 
   const col = await usersCollection();
 
@@ -227,26 +262,80 @@ export async function setAlerts(userId, alertsArray) {
   );
 
   if (result.matchedCount === 0) throw makeError('User not found', 404);
-  return await getUserById(userId);
+  return await getUserById(_id);
 }
 
-//update reputation 
-export async function updateReputation(userId, newRep)
-{
-  const id = ensureObjectId(userId, "userId");
+// Set the user's reputation to an explicit value (>= 0).
+export async function updateReputation(userId, newRep) {
+  const _id = ensureObjectId(userId, 'userId');
+
   const rep = Number(newRep);
-  if(!Number.isFinite(rep) || rep < 0)
-  {
-    throw makeError("Reputation must be a number >= 0", 400);
+  if (!Number.isFinite(rep) || rep < MIN_REPUTATION) {
+    throw makeError(`Reputation must be a number >= ${MIN_REPUTATION}`, 400);
   }
-  const users = await usersCollection();
-  const result = await users.updateOne(
-    {_id},
-    { $set: {reputation: rep, updatedat: new Date()}}
+
+  const col = await usersCollection();
+
+  const res = await col.findOneAndUpdate(
+    { _id },
+    { $set: { reputation: rep, updatedAt: new Date() } },
+    { returnDocument: 'after' }
   );
-  if(result.matchedCount === 0)
-  {
-    throw makeError("User does not exist", 404);
+
+  const doc = unwrapFindOneAndUpdateResult(res);
+  if (!doc) throw makeError('User not found', 404);
+
+  return sanitizeUser(doc);
+}
+
+/**
+ * Adjust reputation by a delta (can be positive or negative).
+ * Atomic and clamped to MIN_REPUTATION. Optional max clamp supported.
+ *
+ * Example usage from routes:
+ *   await adjustReputation(authorId, +0.1)
+ *   await adjustReputation(authorId, -0.5, { max: 100 })
+ */
+export async function adjustReputation(userId, delta, options = {}) {
+  const _id = ensureObjectId(userId, 'userId');
+
+  const d = Number(delta);
+  if (!Number.isFinite(d) || d === 0) {
+    throw makeError('delta must be a finite non-zero number', 400);
   }
-  return await getUserById(userId);
+
+  const max = options?.max;
+  const maxNum = max == null ? null : (Number.isFinite(Number(max)) ? Number(max) : null);
+  if (max != null && maxNum === null) {
+    throw makeError('options.max must be a finite number when provided', 400);
+  }
+
+  const col = await usersCollection();
+  const now = new Date();
+
+  // Pipeline update keeps it atomic and supports clamping.
+  // next = max(MIN_REPUTATION, (ifNull(reputation, DEFAULT_REPUTATION) + delta))
+  // if max provided: next = min(max, next)
+  const base = { $ifNull: ['$reputation', DEFAULT_REPUTATION] };
+  const added = { $add: [base, d] };
+  let nextRep = { $max: [MIN_REPUTATION, added] };
+  if (maxNum !== null) nextRep = { $min: [maxNum, nextRep] };
+
+  const res = await col.findOneAndUpdate(
+    { _id },
+    [
+      {
+        $set: {
+          reputation: nextRep,
+          updatedAt: now
+        }
+      }
+    ],
+    { returnDocument: 'after' }
+  );
+
+  const doc = unwrapFindOneAndUpdateResult(res);
+  if (!doc) throw makeError('User not found', 404);
+
+  return sanitizeUser(doc);
 }

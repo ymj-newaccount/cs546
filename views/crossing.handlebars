@@ -49,7 +49,7 @@
   </label>
 </header>
 
-{{!-- Hidden label used by JS to populate the default report target label --}}
+{{!-- Hidden values used by JS (avoid injecting Handlebars variables into JS code) --}}
 <span id="crossing-label" hidden>
   {{#if aps}}
     {{#if aps.location}}
@@ -61,6 +61,8 @@
     {{#if ramp.streetName}}Curb ramp at {{ramp.streetName}}{{else}}Ramp {{id}}{{/if}}
   {{/if}}
 </span>
+<span id="crossing-kind" hidden>{{kind}}</span>
+<span id="crossing-id" hidden>{{id}}</span>
 
 {{#if user}}
   <p>Signed in as <strong>{{user.username}}</strong></p>
@@ -122,12 +124,9 @@
 
         <dt>Coordinates</dt>
         <dd>
-          {{#if aps.location}}
-            {{#if aps.location.lat}}
-              {{aps.location.lat}}, {{aps.location.lng}}
-            {{else}}
-              Not available
-            {{/if}}
+          {{!-- Use hasCoords to avoid partial/invalid coordinate display --}}
+          {{#if hasCoords}}
+            {{aps.location.lat}}, {{aps.location.lng}}
           {{else}}
             Not available
           {{/if}}
@@ -153,12 +152,9 @@
 
           <dt>Coordinates</dt>
           <dd>
-            {{#if ramp.location}}
-              {{#if ramp.location.lat}}
-                {{ramp.location.lat}}, {{ramp.location.lng}}
-              {{else}}
-                Not available
-              {{/if}}
+            {{!-- Use hasCoords to avoid partial/invalid coordinate display --}}
+            {{#if hasCoords}}
+              {{ramp.location.lat}}, {{ramp.location.lng}}
             {{else}}
               Not available
             {{/if}}
@@ -257,9 +253,7 @@
         <p>No nearby curb ramps found.</p>
       {{/if}}
     {{else}}
-      <p>
-        This crossing record does not include coordinates, so nearby APS/ramps cannot be computed.
-      </p>
+      <p>This crossing record does not include coordinates, so nearby APS/ramps cannot be computed.</p>
     {{/if}}
   </section>
 
@@ -270,36 +264,59 @@
   -------------------------- --}}
   <section aria-labelledby="reports-title">
     <h2 id="reports-title">Community reports</h2>
+    <p class="muted">Vote score is reputation-weighted.</p>
 
     {{!-- Existing reports --}}
     {{#if hasReports}}
       <ul id="reports-list">
         {{#each reports}}
           <li class="report-item" data-report-id="{{reportId}}">
-          <div class="report-main">
-            <strong>{{reportId}}</strong>
-            — {{targetType}}:{{targetId}}
-            — {{text}}
-            {{#if createdBy.username}} — by {{createdBy.username}}{{/if}}
-            {{#if createdAt}} — {{createdAt}}{{/if}}
-            {{#if status}} — status: {{status}}{{/if}}
-          </div>
-          <div class="report-votes" data-report-id="{{reportId}}">
-            <span class="vote-score" aria-label="Score">0</span>
-            {{#if ../user}}
-            <button type="button" class="btn btn-ghost vote-btn js-vote-up" data-vote="1" aria-pressed="false">
-              ↑
-            </button>
-             <button type="button" class="btn btn-ghost vote-btn js-vote-down" data-vote="-1" aria-pressed="false">
-              ↓
-            </button>
-            {{else}}
-            <span class="vote-muted">
-              <a href="/login">Login</a> to vote
-            </span>
-            {{/if}}
-          </div>
-        </li>
+            <div class="report-main">
+              <strong>{{reportId}}</strong>
+              — {{targetType}}:{{targetId}}
+              — {{text}}
+              {{#if createdBy.username}} — by {{createdBy.username}}{{/if}}
+              {{#if createdAt}} — {{createdAt}}{{/if}}
+              {{#if status}} — status: {{status}}{{/if}}
+            </div>
+
+            <div class="report-votes" data-report-id="{{reportId}}">
+              {{!-- Primary score from DB; votes.score is the weighted score. --}}
+              <span class="vote-score" aria-label="Weighted score">
+                {{#if votes}}
+                  {{votes.score}}
+                {{else}}
+                  0
+                {{/if}}
+              </span>
+
+              {{#if ../user}}
+                <button
+                  type="button"
+                  class="btn btn-ghost vote-btn js-vote-up"
+                  data-vote="1"
+                  aria-pressed="false"
+                  aria-label="Upvote"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost vote-btn js-vote-down"
+                  data-vote="-1"
+                  aria-pressed="false"
+                  aria-label="Downvote"
+                >
+                  ↓
+                </button>
+                <span class="vote-status" role="status" aria-live="polite"></span>
+              {{else}}
+                <span class="vote-muted">
+                  <a href="/login">Login</a> to vote
+                </span>
+              {{/if}}
+            </div>
+          </li>
         {{/each}}
       </ul>
     {{else}}
@@ -336,9 +353,7 @@
 
           <div class="form-actions" style="display:flex; gap:10px; align-items:center;">
             <button type="submit" class="btn btn-primary">Submit</button>
-            <button type="button" id="report-reset" class="btn btn-ghost">
-              Reset to this crossing
-            </button>
+            <button type="button" id="report-reset" class="btn btn-ghost">Reset to this crossing</button>
           </div>
         </form>
 
@@ -356,6 +371,7 @@
 {{!-- Inline page JS:
      - Report submission (AJAX -> /api/reports)
      - Report target switching (this crossing / nearby APS / nearby ramps) via buttons above
+     - Report voting (AJAX -> /api/reports/:reportId/vote)
 --}}
 <script>
 (() => {
@@ -372,6 +388,28 @@
     if (!pageError) return;
     pageError.hidden = true;
     pageError.textContent = '';
+  }
+
+  function escapeHtml(value) {
+    const s = String(value ?? '');
+    return s.replace(/[&<>"']/g, (ch) => {
+      switch (ch) {
+        case '&': return '&amp;';
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '"': return '&quot;';
+        case "'": return '&#39;';
+        default: return ch;
+      }
+    });
+  }
+
+  function formatScore(n) {
+    const num = Number(n);
+    if (!Number.isFinite(num)) return '0';
+    const rounded = Math.round(num * 100) / 100;
+    const isInt = Math.abs(rounded - Math.round(rounded)) < 1e-9;
+    return isInt ? String(Math.trunc(Math.round(rounded))) : rounded.toFixed(2);
   }
 
   async function readErrorPayload(resp) {
@@ -411,8 +449,13 @@
   }
 
   // Cache defaults from server-rendered hidden inputs (no Handlebars-in-JS injection).
-  const defaultTargetType = reportTargetType?.value || '';
-  const defaultTargetId = reportTargetId?.value || '';
+  const crossingKind = (document.getElementById('crossing-kind')?.textContent || '').trim();
+  const crossingId = (document.getElementById('crossing-id')?.textContent || '').trim();
+
+  const kindFallbackType = (crossingKind === 'aps' || crossingKind === 'ramp') ? crossingKind : '';
+  const defaultTargetType = reportTargetType?.value || kindFallbackType;
+  const defaultTargetId = reportTargetId?.value || crossingId;
+
   const crossingLabel = (document.getElementById('crossing-label')?.textContent || '').trim();
   const defaultTargetLabel = crossingLabel || 'This crossing';
 
@@ -426,7 +469,7 @@
     const btn = e.target.closest('.js-set-report-target');
     if (!btn) return;
 
-    // If not logged in, there's no form to target-switch.
+    // If not logged in, there is no form to target-switch.
     if (!reportForm) return;
 
     e.preventDefault();
@@ -451,6 +494,45 @@
       setReportTarget(defaultTargetType, defaultTargetId, defaultTargetLabel);
       reportText?.focus?.();
     });
+  }
+
+  function buildReportListItem(report) {
+    const rep = report || {};
+    const rid = String(rep.reportId || '').trim();
+    if (!rid) return null;
+
+    const targetType = escapeHtml(rep.targetType || '');
+    const targetId = escapeHtml(rep.targetId || '');
+    const text = escapeHtml(rep.text || '');
+    const by = rep?.createdBy?.username ? escapeHtml(rep.createdBy.username) : '';
+    const createdAt = rep?.createdAt ? escapeHtml(rep.createdAt) : '';
+    const status = rep?.status ? escapeHtml(rep.status) : '';
+
+    const initialScore =
+      (rep?.votes && (rep.votes.score ?? rep.votes.weightedScore ?? rep.votes.rawScore)) ?? 0;
+
+    const li = document.createElement('li');
+    li.className = 'report-item';
+    li.dataset.reportId = rid;
+
+    li.innerHTML = `
+      <div class="report-main">
+        <strong>${escapeHtml(rid)}</strong>
+        — ${targetType}:${targetId}
+        — ${text}
+        ${by ? ` — by ${by}` : ''}
+        ${createdAt ? ` — ${createdAt}` : ''}
+        ${status ? ` — status: ${status}` : ''}
+      </div>
+      <div class="report-votes" data-report-id="${escapeHtml(rid)}">
+        <span class="vote-score" aria-label="Weighted score">${escapeHtml(formatScore(initialScore))}</span>
+        <button type="button" class="btn btn-ghost vote-btn js-vote-up" data-vote="1" aria-pressed="false" aria-label="Upvote">↑</button>
+        <button type="button" class="btn btn-ghost vote-btn js-vote-down" data-vote="-1" aria-pressed="false" aria-label="Downvote">↓</button>
+        <span class="vote-status" role="status" aria-live="polite"></span>
+      </div>
+    `;
+
+    return li;
   }
 
   // Submit report (AJAX POST /api/reports)
@@ -498,267 +580,204 @@
         }
 
         const data = await resp.json().catch(() => ({}));
-        const rid = data?.report?.reportId || 'OK';
+        const rid = data?.report?.reportId || '';
 
-        setReportStatus(`Submitted successfully. Report ID: ${rid}`);
+        setReportStatus(rid ? `Submitted successfully. Report ID: ${rid}` : 'Submitted successfully.');
         if (reportText) reportText.value = '';
 
-        // Best-effort: prepend the new report to the list for instant feedback.
+        // Prepend the new report to the list for instant feedback (with full vote widget).
         const list = document.getElementById('reports-list');
         const empty = document.getElementById('reports-empty');
         if (list && data?.report) {
           if (empty) empty.remove();
-          const li = document.createElement('li');
-          li.textContent = `${data.report.reportId} — ${data.report.targetType}:${data.report.targetId} — ${data.report.text}`;
-          list.prepend(li);
+
+          const li = buildReportListItem(data.report);
+          if (li) {
+            list.prepend(li);
+
+            // Best-effort: initialize the newly inserted vote widget.
+            if (rid) {
+              const newWidget = li.querySelector('.report-votes[data-report-id]');
+              if (newWidget) {
+                try {
+                  const v = await getVotes(rid);
+                  setVoteWidgetUI(newWidget, v.totals, v.myVote);
+                } catch (_) {
+                  // Best-effort; ignore
+                }
+              }
+            }
+          }
         }
       } catch (err) {
         setReportStatus(err?.message || String(err));
       }
     });
   }
-  async function getVotes(reportId)
-  {
+
+  // -------- Voting --------
+  async function getVotes(reportId) {
     const url = `/api/reports/${encodeURIComponent(String(reportId))}/votes`;
     const resp = await fetch(url, {
       method: 'GET',
       credentials: 'same-origin',
-      headers: {Accept: 'application/json'}
+      headers: { Accept: 'application/json' }
     });
-    if(!resp.ok)
-    {
+    if (!resp.ok) {
       const msg = (await readErrorPayload(resp)) || `Vote fetch failed (HTTP ${resp.status})`;
-      throw new Error (msg);
+      throw new Error(msg);
     }
-    return resp.json().catch(()=>({}));
+    return resp.json().catch(() => ({}));
   }
-  async function postVote(reportId, vote)
-  {
-    if(!csrfToken)
-    {
-      throw new Error("Missing CSRF token");
-    }
-      const url = `/api/reports/${encodeURIComponent(String(reportId))}/vote`;
-      const resp = await fetch(url,
-      {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "x-csrf-token": csrfToken
-        },
-        body: JSON.stringify({vote: vote})
-      });
-      if(!resp.ok)
-    {
-      const msg = (await readErrorPayload(resp)) || `Vote fetch failed (HTTP ${resp.status})`;
-      throw new Error (msg);
-    }
-    return resp.json().catch(()=>({}));
-  }
-  async function deleteVote(reportId)
-  {
-    if(!csrfToken)
-    {
-      throw new Error("Missing CSRF token");
-    }
-      const url = `/api/reports/${encodeURIComponent(String(reportId))}/vote`;
-      const resp = await fetch(url,
-      {
-        method: "DELETE",
-        credentials: "same-origin",
-        headers: {
-          Accept: "application/json",
-          "x-csrf-token": csrfToken
-        },
-      });
-      if(!resp.ok)
-        {
-          const msg = (await readErrorPayload(resp)) || `Vote fetch failed (HTTP ${resp.status})`;
-          throw new Error (msg);
-        }
-    return resp.json().catch(()=>({}));
-    
 
-  }
-  function setVoteWidgetUI(widget, totals, myVote)
-  {
-    if(!widget)
-    {
-      return;
+  async function postVote(reportId, vote) {
+    if (!csrfToken) throw new Error('Missing CSRF token.');
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/vote`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      },
+      body: JSON.stringify({ vote: vote })
+    });
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Vote request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
     }
+    return resp.json().catch(() => ({}));
+  }
+
+  async function deleteVote(reportId) {
+    if (!csrfToken) throw new Error('Missing CSRF token.');
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/vote`;
+    const resp = await fetch(url, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      }
+    });
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Vote request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  function setVoteWidgetUI(widget, totals, myVote) {
+    if (!widget) return;
+
     const scoreEl = widget.querySelector('.vote-score');
     const upBtn = widget.querySelector('.js-vote-up');
     const downBtn = widget.querySelector('.js-vote-down');
+
+    // Primary display: totals.score (server-normalized to reputation-weighted score).
     let score = 0;
-    if(totals && typeof totals.score === "number")
-    {
-      score = totals.score
+    if (totals && Number.isFinite(Number(totals.score))) score = Number(totals.score);
+    else if (totals && Number.isFinite(Number(totals.weightedScore))) score = Number(totals.weightedScore);
+    else if (totals && Number.isFinite(Number(totals.rawScore))) score = Number(totals.rawScore);
+
+    if (scoreEl) {
+      const wTxt = formatScore(score);
+      scoreEl.textContent = wTxt;
+
+      const raw = totals && Number.isFinite(Number(totals.rawScore)) ? Number(totals.rawScore) : null;
+      if (raw !== null && Number.isFinite(raw)) {
+        const rTxt = formatScore(raw);
+        scoreEl.title = (wTxt !== rTxt)
+          ? `Weighted score: ${wTxt}. Raw score: ${rTxt}.`
+          : `Score: ${wTxt}.`;
+      } else {
+        scoreEl.title = `Score: ${wTxt}.`;
+      }
     }
-    if(scoreEl)
-    {
-      scoreEl.textContent = String(score);
-    }
+
     const mine = Number(myVote);
-    {
-      if(upBtn)
-      {
-        if(mine === 1)
-        {
-          upBtn.setAttribute('aria-pressed', 'true');
-        }
-        else
-        {
-          upBtn.setAttribute('aria-pressed', 'false');
-
-        }
-      }
-      if(downBtn)
-      {
-        if(mine === -1)
-        {
-          downBtn.setAttribute('aria-pressed', 'true');
-        }
-        else
-        {
-          downBtn.setAttribute('aria-pressed', 'false');
-
-        }
-      }
-    }
-
+    if (upBtn) upBtn.setAttribute('aria-pressed', mine === 1 ? 'true' : 'false');
+    if (downBtn) downBtn.setAttribute('aria-pressed', mine === -1 ? 'true' : 'false');
   }
-  function setVoteStatus(widgetEl, msg)
-  {
-    let el = null;
-    if(widgetEl)
-    {
-     
-      if(widgetEl)
-      {
-        el = widgetEl.querySelector('.vote-status');
-      }
-      if(!el)
-      {
-        return;
-      }
-      el.textContent = msg;
-    }
-   
 
+  function setVoteStatus(widgetEl, msg) {
+    if (!widgetEl) return;
+    const el = widgetEl.querySelector('.vote-status');
+    if (!el) return;
+    el.textContent = msg ? String(msg) : '';
   }
-  async function initVotes()
-  {
-    const widgets = document.querySelectorAll(".report-votes[data-report-id]");
-    for(let i = 0; i < widgets.length; i++)
-    {
+
+  async function initVotes() {
+    const widgets = document.querySelectorAll('.report-votes[data-report-id]');
+    for (let i = 0; i < widgets.length; i++) {
       const w = widgets[i];
-      const reportId = String(w.dataset.reportId).trim();
-      if(!reportId)
-      {
-        continue;
-      }
-      try
-      {
-         const data = await getVotes(reportId);
-         setVoteWidgetUI(w, data.totals, data.myVote);
-      }
-      catch(e)
-      {
+      const reportId = String(w.dataset.reportId || '').trim();
+      if (!reportId) continue;
 
+      try {
+        const data = await getVotes(reportId);
+        setVoteWidgetUI(w, data.totals, data.myVote);
+      } catch (_) {
+        // Best-effort; do not block page render if one widget fails.
       }
     }
+  }
 
-
-   }
-  document.addEventListener('click', async(e) => 
-  {
+  document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.vote-btn');
-    if(!btn)
-    {
-      return;
-    }
+    if (!btn) return;
+
     const widget = btn.closest('.report-votes');
-    if(!widget)
-    {
-      return;
-    }
-    const reportId = String(widget.dataset.reportId).trim();
-    if(!reportId)
-    {
-      return;
-    }
-    if(!csrfToken)
-    {
-      return;
-    }
+    if (!widget) return;
+
+    const reportId = String(widget.dataset.reportId || '').trim();
+    if (!reportId) return;
+
     clearPageError();
-    setVoteStatus(widget, "");
+    setVoteStatus(widget, '');
 
     const voteVal = Number(btn.dataset.vote);
-    if(voteVal !== 1 && voteVal !== -1)
-    {
-       return;
-    }
+    if (voteVal !== 1 && voteVal !== -1) return;
 
     const upBtn = widget.querySelector('.js-vote-up');
     const downBtn = widget.querySelector('.js-vote-down');
 
-    const currentUp = upBtn && upBtn.getAttribute('aria-pressed') === "true";
-    const currentDown = downBtn && downBtn.getAttribute('aria-pressed') === "true";
+    const currentUp = upBtn && upBtn.getAttribute('aria-pressed') === 'true';
+    const currentDown = downBtn && downBtn.getAttribute('aria-pressed') === 'true';
 
     let currentMyVote = 0;
-    if(currentUp)
-    {
-      currentMyVote = 1;
+    if (currentUp) currentMyVote = 1;
+    if (currentDown) currentMyVote = -1;
+
+    if (!csrfToken) {
+      setVoteStatus(widget, 'Missing CSRF token.');
+      showPageError('Missing CSRF token (check <meta name="csrf-token">).');
+      return;
     }
-    if(currentDown)
-    {
-      currentMyVote = -1;
-    }
-    if(upBtn)
-    {
-      upBtn.disabled = true;
-    }
-    if(downBtn)
-    {
-      downBtn.disabled = true;
-    }
-    try
-    {
+
+    if (upBtn) upBtn.disabled = true;
+    if (downBtn) downBtn.disabled = true;
+
+    try {
       let data;
-      if(currentMyVote === voteVal)
-      {
+      if (currentMyVote === voteVal) {
         data = await deleteVote(reportId);
-        setVoteStatus(widget, "Vote removed.");
-      }
-      else
-      {
+        setVoteStatus(widget, 'Vote removed.');
+      } else {
         data = await postVote(reportId, voteVal);
-        setVoteStatus(widget, "Vote recorded.");
+        setVoteStatus(widget, 'Vote recorded.');
       }
 
       setVoteWidgetUI(widget, data.totals, data.myVote);
+    } catch (err) {
+      showPageError(err?.message || String(err));
+    } finally {
+      if (upBtn) upBtn.disabled = false;
+      if (downBtn) downBtn.disabled = false;
     }
-    catch(e)
-    {
-      showPageError(String(e));
-    }
-    finally
-    {
-      if(upBtn)
-      {
-        upBtn.disabled = false;
-      }
-      if(downBtn)
-      {
-        downBtn.disabled = false;
-      }
-    }
-
-
   });
+
   initVotes();
 })();
 </script>

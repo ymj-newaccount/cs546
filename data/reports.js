@@ -1,6 +1,7 @@
 // data/reports.js
 import { getDb } from '../config/mongoConnection.js';
 import { randomBytes } from 'crypto';
+import { ObjectId } from 'mongodb';
 
 const VALID_TARGET_TYPES = new Set(['station', 'elevator', 'aps', 'ramp']);
 
@@ -51,6 +52,8 @@ function normalizeText(text) {
   return s;
 }
 
+// Note: This accepts either a custom reportId (e.g., "R...") or a MongoDB _id string.
+// Callers decide how to interpret it.
 function normalizeReportId(reportId) {
   const id = assertNonEmptyString(String(reportId ?? ''), 'reportId');
   if (id.length > 200) throw makeError('reportId is too long', 400);
@@ -61,6 +64,18 @@ function normalizeUserId(userId) {
   const id = assertNonEmptyString(String(userId ?? ''), 'userId');
   if (id.length > 200) throw makeError('userId is too long', 400);
   return id;
+}
+
+function toSafeInt(v, def = 0) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  return Math.trunc(n);
+}
+
+function toSafeNumber(v, def = 0) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  return n;
 }
 
 function newReportId() {
@@ -74,6 +89,21 @@ function sanitizeReport(doc) {
     out._id = out._id.toString();
   }
   return out;
+}
+
+// MongoDB Node Driver compatibility:
+// - Older drivers return { value: <doc>, ... } (ModifyResult)
+// - Newer drivers (v6/v7) default to returning <doc> directly when includeResultMetadata is false
+function unwrapFindOneAndUpdateResult(res) {
+  if (!res) return null;
+
+  const isModifyResult =
+    typeof res === 'object' &&
+    res !== null &&
+    Object.prototype.hasOwnProperty.call(res, 'value') &&
+    Object.prototype.hasOwnProperty.call(res, 'lastErrorObject');
+
+  return isModifyResult ? (res.value ?? null) : res;
 }
 
 // One-time index initialization (avoid re-creating indexes on every request).
@@ -178,14 +208,24 @@ export async function createReport({ targetType, targetId, text, createdBy }) {
       createdAt: now,
       updatedAt: now,
       createdBy: { userId: createdByUserId, username: createdByUsername },
-      votes: {upVote: 0, downVote: 0, score: 0, voteCount: 0}
+      votes: {
+        upVote: 0,
+        downVote: 0,
+        voteCount: 0,
+        // Primary score is reputation-weighted. rawScore is the unweighted score.
+        score: 0,
+        rawScore: 0,
+        weightedScore: 0,
+        upWeight: 0,
+        downWeight: 0
+      }
     };
 
     try {
       const ins = await col.insertOne(doc);
       if (!ins.acknowledged) throw makeError('Could not create report', 500);
       // doc does not include _id, which is fine for API responses
-      return doc;
+      return sanitizeReport(doc);
     } catch (e) {
       if (e?.code === 11000 && i < 2) continue;
       throw e;
@@ -195,10 +235,18 @@ export async function createReport({ targetType, targetId, text, createdBy }) {
   throw makeError('Could not generate unique report id', 500);
 }
 
+// Fetch by custom reportId; also supports MongoDB _id as a fallback for robustness.
 export async function getReportByReportId(reportId) {
   const id = normalizeReportId(reportId);
   const col = await reportsCollection();
-  const doc = await col.findOne({ reportId: id });
+
+  let doc = await col.findOne({ reportId: id });
+
+  // Fallback: allow lookup by MongoDB _id if caller provided a 24-hex string.
+  if (!doc && ObjectId.isValid(id)) {
+    doc = await col.findOne({ _id: new ObjectId(id) });
+  }
+
   if (!doc) throw makeError('Report not found', 404);
   return sanitizeReport(doc);
 }
@@ -242,54 +290,65 @@ export async function getReportsForTarget(targetType, targetId, options = {}) {
   return docs.map(sanitizeReport);
 }
 
-//Updates total votes on a report
-export async function updateReportVotes(reportId, total)
-{
-  const id = normalizeReportId(reportId);
-  const repo = await reportsCollection();
-  const today = new Date();
+// Updates total votes on a report (stores both weighted and raw totals).
+// Accepts either a custom reportId or a MongoDB _id string for robustness.
+export async function updateReportVotes(reportIdOrMongoId, total = {}) {
+  const id = normalizeReportId(reportIdOrMongoId);
+  const col = await reportsCollection();
+  const now = new Date();
 
-  let upVote = 0;
-  let downVote = 0;
-  let score = 0;
-  let voteCount = 0;
+  const upVote = Math.max(0, toSafeInt(total.upVotes, 0));
+  const downVote = Math.max(0, toSafeInt(total.downVotes, 0));
 
-  if(total)
-  {
-    if(typeof total.upVotes === "number")
-    {
-      upVote = total.upVotes;
-    }
-    if(typeof total.downVotes === "number")
-    {
-      downVote = total.downVotes;
-    }
-    if(typeof total.score === "number")
-    {
-      score = total.score;
-    }
-    if(typeof total.voteCount === "number")
-    {
-      voteCount = total.voteCount;
-    }
+  const rawScore = toSafeInt(total.rawScore ?? total.score, upVote - downVote);
+  const voteCount = Math.max(0, toSafeInt(total.voteCount, upVote + downVote));
 
-  }
-  const result = await repo.updateOne(
-      {reportId: id},
-      { $set: {
-        "votes.upVote": upVote,
-        "votes.downVote": downVote,
-        "votes.score": score,
-        "votes.voteCount": voteCount,
-        updatedAt: today
-      }},
-      {returnDocument: "after"}
-    
+  const upWeight = Math.max(0, toSafeNumber(total.uWeight, 0));
+  const downWeight = Math.max(0, toSafeNumber(total.dWeight, 0));
+
+  let weightedScore = toSafeNumber(total.weightedScore, upWeight - downWeight);
+  if (!Number.isFinite(weightedScore)) weightedScore = 0;
+
+  const update = {
+    $set: {
+      'votes.upVote': upVote,
+      'votes.downVote': downVote,
+      'votes.voteCount': voteCount,
+
+      // Primary score: reputation-weighted score.
+      'votes.score': weightedScore,
+
+      // Additional stored totals for debugging / alternate UI.
+      'votes.rawScore': rawScore,
+      'votes.weightedScore': weightedScore,
+      'votes.upWeight': upWeight,
+      'votes.downWeight': downWeight,
+
+      updatedAt: now
+    }
+  };
+
+  // 1) Try update by custom reportId
+  const res1 = await col.findOneAndUpdate(
+    { reportId: id },
+    update,
+    { returnDocument: 'after' }
   );
-  if(!result || result.matchedCount === 0)
-  {
-    throw makeError( "Report not found", 404);
-  }
-  return sanitizeReport(result.value);
+  let doc = unwrapFindOneAndUpdateResult(res1);
 
+  // 2) Fallback update by MongoDB _id if the input looks like an ObjectId
+  if (!doc && ObjectId.isValid(id)) {
+    const res2 = await col.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      update,
+      { returnDocument: 'after' }
+    );
+    doc = unwrapFindOneAndUpdateResult(res2);
+  }
+
+  if (!doc) {
+    throw makeError('Report not found', 404);
+  }
+
+  return sanitizeReport(doc);
 }
