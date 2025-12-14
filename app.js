@@ -70,7 +70,7 @@ async function startServer() {
 
   // Static assets (CSS, client-side JS, images, etc.).
   app.use('/public', express.static(path.join(__dirname, 'public')));
-
+  app.use('/uploads', express.static(path.join(process.cwd(),'uploads')));
   // Session middleware (REQUIRED for auth.js)
   app.use(
     session({

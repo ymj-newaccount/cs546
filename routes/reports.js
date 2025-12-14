@@ -24,6 +24,9 @@ import {
   getDuplicateTotals,
   getUserDuplicateFlag
 } from '../data/duplicateFlags.js';
+import path from "path";
+import fs from "fs";
+import multer from "multer";
 
 const router = express.Router();
 
@@ -189,6 +192,57 @@ async function resolveReportParam(input) {
 }
 
 // ---------------------------
+// Mutlter Image Upload
+// ---------------------------
+const uploadDir = path.join(process.cwd(), "uploads", "reports");
+fs.mkdirSync(uploadDir, {recursive: true});
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb)
+  {
+    cb(null, uploadDir);
+  },
+  filename: function (req,file, cb)
+  {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const rand = Math.random().toString(16).slice(2);
+    const name = `rpt_${Date.now()}_${rand}${ext}`;
+    cb(null,name);
+  }
+});
+
+function fileFilter(req,file,cb)
+{
+  const mt = file.mimetype;
+  if(mt === "image/jpeg" || mt === "image/png")
+  {
+    cb(null, true);
+    return;
+  }
+  cb(new Error("Only image uploads of type jpeg or png are allowed"), false);
+}
+
+const upload = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {fileSize: 5 * 1024* 1024} //5MB Max
+});
+
+function injectCsrfFromHeader(req,res,next)
+{
+  if(!req.body)
+  {
+    req.body = {};
+  }
+  const hdr = req.get("x-csrf-token");
+  if(!req.body.csrfToken && hdr)
+  {
+    req.body.csrfToken = hdr;
+  }
+  return next();
+}
+
+// ---------------------------
 // Routes
 // ---------------------------
 
@@ -196,21 +250,45 @@ async function resolveReportParam(input) {
  * Create a report.
  * Returns the created report document.
  */
-router.post('/', ensureLoggedIn, requireCsrf, async (req, res, next) => {
+router.post('/', ensureLoggedIn, upload.single("image"),injectCsrfFromHeader,requireCsrf, async (req, res, next) => {
   try {
     const { targetType, targetId, text } = req.body || {};
     const createdBy = {
       userId: String(req.session.user._id),
       username: String(req.session.user.username)
     };
+    let image = null;
+    if(req.file)
+    {
+      image = 
+      {
+        url: "/uploads/reports/" + req.file.filename,
+        filename: req.file.filename,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      };
+    }
 
-    const report = await createReport({ targetType, targetId, text, createdBy });
+    const report = await createReport({ targetType, targetId, text, createdBy, image });
 
     // Reward contribution (best-effort)
     await bestEffortAdjustReputation(createdBy.userId, REP_DELTA_ON_REPORT_CREATE, req);
 
     return res.status(201).json({ report });
-  } catch (err) {
+  } catch (err) 
+  {
+    try
+    {
+      //clean up if DB insert failed
+      if(req.file && req.file.path)
+      {
+        fs.unlinkSync(req.file.path);
+      }
+    }
+    catch(e)
+    {
+      //pass
+    }
     return next(err);
   }
 });

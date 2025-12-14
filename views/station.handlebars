@@ -288,6 +288,20 @@
               <strong>{{reportId}}</strong>
               — {{targetType}}:{{targetId}}
               — {{text}}
+              {{#if image}}
+              {{#if image.url}}
+              <div class="report-image" style="margin-top:8px;">
+                <a href="{{image.url}}" target="_blank" rel="noopener">
+                  <img 
+                    src="{{image.url}}"
+                    alt="Report photo"
+                    style="max-width:320px; border-radius:8px;"
+                    loading="lazy">
+
+                </a>
+              </div>
+              {{/if}}
+              {{/if}}
               {{#if createdBy.username}} — by {{createdBy.username}}{{/if}}
               {{#if createdAt}} — {{createdAt}}{{/if}}
               {{#if status}} — status: {{status}}{{/if}}
@@ -355,7 +369,14 @@
             placeholder="e.g., Entrance is blocked by construction fencing."
             style="width:100%; max-width:720px;"
           ></textarea>
+          <div style="margin-top:10px">
+          <label for="report-image" style="display:block; margin-bottom:6px;">Optional Image</label>
+          </div>
+          <input id="report-image" name="image" type="file" accept="image/*"/>
+          <p class="muted" id="report-image-help">JPEG/PNG</p>
 
+          <img id="report-image-preview" alt="" style="display:none; max-width:320px; margin-top:8px; border-radius:8px;">
+          <button type="button" id="report-image-clear" class="btn btn-ghost" style="display:none;margin-top:6px">Remove Image</button>
           <p id="report-help">
             Include specifics like entrance direction, exact location, and what makes it inaccessible.
           </p>
@@ -505,7 +526,9 @@
   const reportText = document.getElementById('report-text');
   const reportStatus = document.getElementById('report-status');
   const reportReset = document.getElementById('report-reset');
-
+  const reportImage = document.getElementById("report-image");
+  const reportImagePreview = document.getElementById("report-image-preview");
+  const reportImageClear = document.getElementById("report-image-clear");
   function setReportStatus(msg) {
     if (!reportStatus) return;
     reportStatus.textContent = msg ? String(msg) : '';
@@ -576,6 +599,16 @@
     const createdAt = rep?.createdAt ? escapeHtml(rep.createdAt) : '';
     const status = rep?.status ? escapeHtml(rep.status) : '';
 
+    let imageHtml = "";
+    if(rep.image && rep.image.url)
+    {
+      const imgUrl = escapeHtml(rep.image.url);
+      imageHtml = `<div class="report-image" style="margin-top:8px;">
+                    <a href="${imgUrl}" target="_blank" rel="noopener">
+                      <img src="${imgUrl}" alt="Report Photo" style="max-width:320px; border-radius:8px;">
+                      </a>
+                      </div>`;
+    }
     const initialScore =
       (rep?.votes && (rep.votes.score ?? rep.votes.weightedScore ?? rep.votes.rawScore)) ?? 0;
 
@@ -588,6 +621,7 @@
         <strong>${escapeHtml(rid)}</strong>
         — ${targetType}:${targetId}
         — ${text}
+        ${imageHtml}
         ${by ? ` — by ${by}` : ''}
         ${createdAt ? ` — ${createdAt}` : ''}
         ${status ? ` — status: ${status}` : ''}
@@ -616,6 +650,16 @@
         text: reportText?.value?.trim() || ''
       };
 
+      const fd = new FormData();
+      fd.append('targetType', payload.targetType);
+      fd.append('targetId', payload.targetId);
+      fd.append('text', payload.text);
+
+      if(reportImage?.files?.[0])
+      {
+        fd.append("image", reportImage.files[0]);
+      }
+
       if (!payload.targetType || !payload.targetId) {
         setReportStatus('Missing target information.');
         return;
@@ -634,11 +678,10 @@
           method: 'POST',
           credentials: 'same-origin',
           headers: {
-            'Content-Type': 'application/json',
             Accept: 'application/json',
             'x-csrf-token': csrfToken
           },
-          body: JSON.stringify(payload)
+          body: fd
         });
 
         if (!resp.ok) {
@@ -651,7 +694,12 @@
         const rid = data?.report?.reportId || '';
 
         setReportStatus(rid ? `Submitted successfully. Report ID: ${rid}` : 'Submitted successfully.');
-        if (reportText) reportText.value = '';
+        if (reportText) 
+        {
+            reportText.value = '';
+            clearSelectedImage();
+
+        }
 
         // Prepend the new report to the list for instant feedback (with full vote widget).
         const list = document.getElementById('reports-list');
@@ -682,6 +730,72 @@
       }
     });
   }
+  //-------Images-------
+let previewObjectUrl = "";
+ function clearSelectedImage()
+ {
+  if(previewObjectUrl)
+  {
+    URL.revokeObjectURL(previewObjectUrl)
+    previewObjectUrl = "";
+  }
+  if(reportImage)
+  {
+    reportImage.value = "";
+  }
+  if(reportImagePreview)
+  {
+    reportImagePreview.src = "";
+    reportImagePreview.alt = "";
+    reportImagePreview.style.display = "none";
+    
+  }
+  if(reportImageClear)
+  {
+    reportImageClear.style.display ="none";
+  }
+ }
+ if (reportImage)
+ {
+  reportImage.addEventListener('change', () => 
+  {
+    clearPageError();
+    setReportStatus('');
+    const file = reportImage.files && reportImage.files[0];
+    if(!file)
+    {
+      clearSelectedImage();
+      return;
+    }
+    if(!file.type || !file.type.startsWith('image/'))
+    {
+      setReportStatus("Please choose an image file.");
+      clearSelectedImage();
+      return;
+    }
+
+    if(previewObjectUrl)
+    {
+      URL.revokeObjectURL(previewObjectUrl);
+    }
+    previewObjectUrl = URL.createObjectURL(file);
+
+    if(reportImagePreview)
+    {
+      reportImagePreview.src = previewObjectUrl;
+      reportImagePreview.alt = "Selected report photo preview";
+      reportImagePreview.style.display = "block";
+    }
+    if(reportImageClear)
+    {
+      reportImageClear.style.display = "inline-block";
+    }
+  });
+ }
+ if(reportImageClear)
+ {
+  reportImageClear.addEventListener('click', clearSelectedImage);
+ }
 
   // -------- Voting --------
   async function getVotes(reportId) {

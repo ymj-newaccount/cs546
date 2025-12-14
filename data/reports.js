@@ -91,6 +91,64 @@ function sanitizeReport(doc) {
   return out;
 }
 
+//helper for optional images
+function normalizeImage(image)
+{
+  if(image == null)
+  {
+    return null;
+  }
+  if(typeof image !== "object")
+  {
+    throw makeError("image must be an object", 400);
+  }
+
+  let url = "";
+  if(typeof image.url === "string")
+  {
+    url = image.url.trim();
+  }
+  if(!url)
+  {
+    return null;
+  }
+  let filename = "";
+  if(typeof image.filename === "string")
+  {
+    filename = image.filename.trim();
+  }
+  let mimetype = "";
+  if(typeof image.mimetype === "string")
+  {
+    mimetype = image.mimetype.trim();
+  }
+  let size = 0;
+  if(typeof image.size === "number")
+  {
+    size = image. size;
+  }
+
+  //url checks
+  if(url.length > 2000)
+  {
+    throw makeError("image.url is too long", 400);
+  }
+  if(filename.length > 500)
+  {
+    throw makeError("image.filename is too long", 400);
+  }
+  if(mimetype.length > 200)
+  {
+    throw makeError("image.mimetype is too long", 400);
+  }
+  if(!Number.isFinite(size) || size < 0)
+  {
+    throw makeError("image.size is invalid", 400);
+  }
+
+  return { url, filename, mimetype, size};
+}
+
 // MongoDB Node Driver compatibility:
 // - Older drivers return { value: <doc>, ... } (ModifyResult)
 // - Newer drivers (v6/v7) default to returning <doc> directly when includeResultMetadata is false
@@ -169,7 +227,7 @@ async function targetExists(db, targetType, targetId) {
 // Public API
 // ---------------------------
 
-export async function createReport({ targetType, targetId, text, createdBy }) {
+export async function createReport({ targetType, targetId, text, createdBy, image}) {
   const db = await getDb();
 
   const tType = normalizeTargetType(targetType);
@@ -193,6 +251,8 @@ export async function createReport({ targetType, targetId, text, createdBy }) {
 
   const ok = await targetExists(db, tType, tId);
   if (!ok) throw makeError('Target not found', 404);
+ 
+  const safeImage = normalizeImage(image);
 
   const col = await reportsCollection(db);
   const now = new Date();
@@ -220,6 +280,10 @@ export async function createReport({ targetType, targetId, text, createdBy }) {
         downWeight: 0
       }
     };
+    if(safeImage)
+    {
+      doc.image = safeImage;
+    }
 
     try {
       const ins = await col.insertOne(doc);
@@ -343,6 +407,53 @@ export async function updateReportVotes(reportIdOrMongoId, total = {}) {
       update,
       { returnDocument: 'after' }
     );
+    doc = unwrapFindOneAndUpdateResult(res2);
+  }
+
+  if (!doc) {
+    throw makeError('Report not found', 404);
+  }
+
+  return sanitizeReport(doc);
+}
+
+//Update Duplicate flags function
+/**
+ * Update stored duplicate-flag aggregates on a report.
+ * Accepts either a custom reportId or a MongoDB _id string for robustness.
+ */
+export async function updateReportDuplicateFlags(reportIdOrMongoId, totals = {}) {
+  const id = normalizeReportId(reportIdOrMongoId);
+  const col = await reportsCollection();
+  const now = new Date();
+
+  const flagCount = Math.max(0, toSafeInt(totals.flagCount, 0));
+  const weightTotal = Math.max(0, toSafeNumber(totals.weightTotal, 0));
+
+  const topCandidateReportId = String(totals.topCandidateReportId ?? '').trim();
+  const topCandidateCount = Math.max(0, toSafeInt(totals.topCandidateCount, 0));
+  const topCandidateWeight = Math.max(0, toSafeNumber(totals.topCandidateWeight, 0));
+
+  const update = {
+    $set: {
+      'duplicateFlags.flagCount': flagCount,
+      'duplicateFlags.weightTotal': weightTotal,
+      'duplicateFlags.topCandidateReportId': topCandidateReportId,
+      'duplicateFlags.topCandidateCount': topCandidateCount,
+      'duplicateFlags.topCandidateWeight': topCandidateWeight,
+      updatedAt: now
+    }
+  };
+
+  // 1) Try update by custom reportId
+  const res1 = await col.findOneAndUpdate({ reportId: id }, update, { returnDocument: 'after' });
+  let doc = unwrapFindOneAndUpdateResult(res1);
+
+  // 2) Fallback update by MongoDB _id if the input looks like an ObjectId
+  if (!doc && ObjectId.isValid(id)) {
+    const res2 = await col.findOneAndUpdate({ _id: new ObjectId(id) }, update, {
+      returnDocument: 'after'
+    });
     doc = unwrapFindOneAndUpdateResult(res2);
   }
 
