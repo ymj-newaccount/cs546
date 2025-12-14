@@ -1,7 +1,7 @@
 // routes/reports.js
 import express from 'express';
 import { requireCsrf } from './auth.js';
-import { createReport ,updateReportVotes } from '../data/reports.js';
+import { createReport ,getReportByReportId,updateReportVotes } from '../data/reports.js';
 import {castVote, removeVote, getTotalVotes, getUserVoteForReport} from '../data/votes.js';
 
 const router = express.Router();
@@ -31,6 +31,7 @@ router.get('/:reportId/votes', async (req, res, next) =>
   try
   {
     const reportId = String(req.params.reportId).trim();
+    await getReportByReportId(reportId);
     if(!reportId)
     {
       return res.status(400).json({error: "reportId required"});
@@ -59,14 +60,14 @@ router.post("/:reportId/vote", ensureLoggedIn, requireCsrf, async(req,res,next) 
     {
       return res.status(400).json({error: "reportId is required"});
     }
-
+    await getReportByReportId(reportId);
     const vote = req.body.vote;
     const userId = String(req.session.user._id);
 
     await castVote({reportId: reportId, userId: userId, vote: vote});
+
     const totals = await getTotalVotes(reportId);
     await updateReportVotes(reportId, totals);
-
     const myVote = await getUserVoteForReport(reportId,  userId);
     return res.json({reportId, totals, myVote});
   }

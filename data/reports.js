@@ -248,6 +248,7 @@ export async function updateReportVotes(reportId, total)
   const id = normalizeReportId(reportId);
   const repo = await reportsCollection();
   const today = new Date();
+
   let upVote = 0;
   let downVote = 0;
   let score = 0;
@@ -255,9 +256,9 @@ export async function updateReportVotes(reportId, total)
 
   if(total)
   {
-    if(typeof total.upVote === "number")
+    if(typeof total.upVotes === "number")
     {
-      upVote = total.upVote;
+      upVote = total.upVotes;
     }
     if(typeof total.downVotes === "number")
     {
@@ -273,7 +274,7 @@ export async function updateReportVotes(reportId, total)
     }
 
   }
-  const result = await repo.findOneAndUpdate(
+  const result = await repo.updateOne(
       {reportId: id},
       { $set: {
         "votes.upVote": upVote,
@@ -285,7 +286,7 @@ export async function updateReportVotes(reportId, total)
       {returnDocument: "after"}
     
   );
-  if(!result || !result.value)
+  if(!result || result.matchedCount === 0)
   {
     throw makeError( "Report not found", 404);
   }
