@@ -303,6 +303,36 @@ button.btn {
 {
   margin-bottom: 24px;
 }
+.panel-item {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+.details-list {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 6px 14px;
+  margin: 10px 0 0;
+}
+
+.details-list dt {
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.details-list dd {
+  margin: 0;
+}
+
+.panel-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 /* ---------------------------
    Form controls
 ---------------------------- */

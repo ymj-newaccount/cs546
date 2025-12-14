@@ -103,7 +103,7 @@ router.get('/:id', async (req, res, next) => {
       try {
         const u = await getUserById(String(sessionUserId));
         let arr;
-        if(u && u.crossingBookmarks && u.crossBookmarks[kind])
+        if(u && u.crossingBookmarks && u.crossingBookmarks[kind])
         {
           arr = u.crossingBookmarks[kind];
         }

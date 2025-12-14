@@ -11,6 +11,12 @@
       <button type="submit" class="btn btn-primary">Logout</button>
     </form>
   </nav>
+
+  <label class="theme-switch">
+    <input id="theme-toggle" type="checkbox" aria-label="Toggle dark mode">
+    <span class="switch-ui" aria-hidden="true"></span>
+    <span class="switch-text">Night mode</span>
+  </label>
 </header>
 
 <p>
@@ -19,13 +25,14 @@
 </p>
 
 <main style="padding:12px;">
-  <section aria-labelledby="followed-stations-title">
+  <section aria-labelledby="followed-stations-title" class="section-panel">
+  <div class="panel">
     <h2 id="followed-stations-title">Followed Stations</h2>
 
     {{#if hasFollowed}}
-      <ul>
+      <ul class="list-clean">
         {{#each followedStations}}
-          <li>
+          <li class="panel-item">
             <div>
               <strong>
                 {{#if link}}
@@ -55,19 +62,22 @@
         {{/each}}
       </ul>
     {{else}}
-      <p>You are not following any stations yet.</p>
+      <p class="muted">You are not following any stations yet.</p>
     {{/if}}
-  </section>
+  </div>
+</section>
+
 
   <hr>
 
-  <section aria-labelledby="followed-crossings-title">
+  <section aria-labelledby="followed-crossings-title" class="section-panel">
+  <div class="panel">
     <h2 id="followed-crossings-title">Followed Crossings</h2>
 
     {{#if hasFollowedCrossings}}
-      <ul>
+      <ul class="list-clean">
         {{#each followedCrossings}}
-          <li>
+          <li class="panel-item">
             <div>
               <strong>
                 {{#if link}}
@@ -85,20 +95,23 @@
         {{/each}}
       </ul>
     {{else}}
-      <p>You are not following any crossings yet.</p>
+      <p class="muted">You are not following any crossings yet.</p>
     {{/if}}
-  </section>
+  </div>
+</section>
+
 
   <hr>
 
-  <section aria-labelledby="feed-title">
+  <section aria-labelledby="feed-title" class="section-panel">
+  <div class="panel">
     <h2 id="feed-title">Your Feed</h2>
     <p class="muted">Recent reports for your followed stations and crossings.</p>
 
     {{#if hasFeed}}
-      <ul>
+      <ul class="list-clean">
         {{#each feed}}
-          <li>
+          <li class="panel-item">
             <div>
               <strong>{{reportId}}</strong>
               {{#if targetLink}}
@@ -112,10 +125,12 @@
 
             <div class="muted">
               {{#if createdAt}}Created: {{createdAt}}{{/if}}
+
               {{#if status}}
                 {{#if createdAt}}<span aria-hidden="true"> · </span>{{/if}}
                 Status: {{status}}
               {{/if}}
+
               {{#if createdBy.username}}
                 <span aria-hidden="true"> · </span>
                 By: {{createdBy.username}}
@@ -125,19 +140,22 @@
         {{/each}}
       </ul>
     {{else}}
-      <p>No recent reports for your followed stations or crossings.</p>
+      <p class="muted">No recent reports for your followed stations or crossings.</p>
     {{/if}}
-  </section>
+  </div>
+</section>
+
 
   <hr>
 
-  <section aria-labelledby="your-reports-title">
+  <section aria-labelledby="your-reports-title" class="section-panel">
+  <div class="panel">
     <h2 id="your-reports-title">Your Reports</h2>
 
     {{#if hasReports}}
-      <ul>
+      <ul class="list-clean">
         {{#each reports}}
-          <li>
+          <li class="panel-item">
             <div>
               <strong>{{reportId}}</strong>
               {{#if targetLink}}
@@ -151,6 +169,7 @@
 
             <div class="muted">
               {{#if createdAt}}Created: {{createdAt}}{{/if}}
+
               {{#if status}}
                 {{#if createdAt}}<span aria-hidden="true"> · </span>{{/if}}
                 Status: {{status}}
@@ -160,7 +179,9 @@
         {{/each}}
       </ul>
     {{else}}
-      <p>You have not submitted any reports yet.</p>
+      <p class="muted">You have not submitted any reports yet.</p>
     {{/if}}
-  </section>
+  </div>
+</section>
+
 </main>

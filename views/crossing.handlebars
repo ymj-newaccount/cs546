@@ -93,10 +93,11 @@
   {{!-- -------------------------
        Crossing summary
   -------------------------- --}}
-  <section aria-labelledby="crossing-summary-title">
+  <section aria-labelledby="crossing-summary-title" class="section-panel">
+  <div class="panel">
     <h2 id="crossing-summary-title">Crossing summary</h2>
 
-    <dl>
+    <dl class="details-list">
       <dt>Type</dt>
       <dd>{{kind}}</dd>
 
@@ -125,7 +126,6 @@
 
         <dt>Coordinates</dt>
         <dd>
-          {{!-- Use hasCoords to avoid partial/invalid coordinate display --}}
           {{#if hasCoords}}
             {{aps.location.lat}}, {{aps.location.lng}}
           {{else}}
@@ -133,16 +133,13 @@
           {{/if}}
         </dd>
 
-        {{!-- Optional: APS install date if present --}}
         {{#if aps.installDate}}
           <dt>Install date</dt>
           <dd>{{aps.installDate}}</dd>
         {{/if}}
       {{/if}}
 
-      {{!-- Ramp fields
-           IMPORTANT: If both aps and ramp exist (ID collision), the route prefers APS.
-           This block is therefore only shown when APS is not present. --}}
+      {{!-- Ramp fields (only when APS is not present) --}}
       {{#unless aps}}
         {{#if ramp}}
           <dt>Street</dt>
@@ -153,7 +150,6 @@
 
           <dt>Coordinates</dt>
           <dd>
-            {{!-- Use hasCoords to avoid partial/invalid coordinate display --}}
             {{#if hasCoords}}
               {{ramp.location.lat}}, {{ramp.location.lng}}
             {{else}}
@@ -165,8 +161,7 @@
     </dl>
 
     {{#if user}}
-      {{!-- Follow/unfollow crossing (AJAX) --}}
-      <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <div class="panel-actions">
         <button
           id="follow-crossing-toggle"
           type="button"
@@ -177,11 +172,12 @@
         >
           {{#if isBookmarked}}Unfollow crossing{{else}}Follow crossing{{/if}}
         </button>
+
+
         <span id="follow-status" role="status" aria-live="polite"></span>
       </div>
 
-      {{!-- Quick action: open report form targeted to this crossing --}}
-      <div style="margin-top:10px;">
+      <div style="margin-top: 10px;">
         <button
           type="button"
           class="btn btn-primary js-set-report-target"
@@ -193,12 +189,14 @@
         </button>
       </div>
     {{else}}
-      <p style="margin-top:10px;">
+      <p class="muted" style="margin-top: 10px;">
         Log in to follow this crossing and submit a report.
         <a href="/login">Login</a>
       </p>
     {{/if}}
-  </section>
+  </div>
+</section>
+
 
   <hr>
 
