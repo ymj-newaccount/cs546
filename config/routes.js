@@ -15,6 +15,9 @@ import reportsRoutes from '../routes/reports.js';
 // Stations API routes for follow/unfollow (AJAX)
 import stationsApiRoutes from '../routes/stationsApi.js';
 
+// Crossings API routes for follow/unfollow (AJAX)
+import crossingsApiRoutes from '../routes/crossingsApi.js';
+
 // Dashboard page route
 import dashboardRoutes from '../routes/dashboard.js';
 
@@ -82,6 +85,12 @@ export function registerRoutes(app) {
   //   POST /api/stations/:stationId/unfollow
   app.use('/api/stations', stationsApiRoutes);
 
+  // Crossing follow/unfollow API (AJAX)
+  // Expected endpoints:
+  //   POST /api/crossings/:kind/:id/follow
+  //   POST /api/crossings/:kind/:id/unfollow
+  app.use('/api/crossings', crossingsApiRoutes);
+  
   // ---------------------------
   // Global fallbacks
   // ---------------------------
