@@ -1,0 +1,1389 @@
+{{!-- views/crossing.handlebars
+     Crossing detail page (GET /crossing/:id)
+
+     Inputs (from routes/crossingPage.js):
+       - id (string)               // the requested crossing id
+       - kind ("aps" | "ramp")     // resolved type (APS preferred if collision)
+       - aps (object|null)         // APS record if found
+       - ramp (object|null)        // Ramp record if found
+       - hasCoords (boolean)
+       - nearbyAPS, hasNearbyAPS
+       - nearbyRamps, hasNearbyRamps
+       - reports, hasReports
+       - reportTargetType, reportTargetId
+       - isBookmarked (boolean)   // whether logged-in user follows this crossing
+
+     Globals (from middleware / layout):
+       - user (null or { _id, username, ... })
+       - csrfToken (string) for server-side forms (logout)
+       - <meta name="csrf-token" ...> exists in main layout for AJAX
+--}}
+
+<header class="page-title-bar">
+  <h1>
+    Crossing Details
+    {{!-- Prefer a human label if possible --}}
+    {{#if aps}}
+      {{#if aps.location}}
+        {{#if aps.location.address}}
+          — APS at {{aps.location.address}}
+        {{else}}
+          — APS {{id}}
+        {{/if}}
+      {{else}}
+        — APS {{id}}
+      {{/if}}
+    {{else}}
+      {{#if ramp.streetName}}
+        — Curb Ramp at {{ramp.streetName}}
+      {{else}}
+        — Ramp {{id}}
+      {{/if}}
+    {{/if}}
+  </h1>
+
+  {{!-- Theme toggle (theme.js looks for #theme-toggle) --}}
+  <label class="theme-switch">
+    <input id="theme-toggle" type="checkbox" aria-label="Toggle dark mode">
+    <span class="switch-ui" aria-hidden="true"></span>
+    <span class="switch-text">Night mode</span>
+  </label>
+</header>
+
+{{!-- Hidden values used by JS (avoid injecting Handlebars variables into JS code) --}}
+<span id="crossing-label" hidden>
+  {{#if aps}}
+    {{#if aps.location}}
+      {{#if aps.location.address}}APS at {{aps.location.address}}{{else}}APS {{id}}{{/if}}
+    {{else}}
+      APS {{id}}
+    {{/if}}
+  {{else}}
+    {{#if ramp.streetName}}Curb ramp at {{ramp.streetName}}{{else}}Ramp {{id}}{{/if}}
+  {{/if}}
+</span>
+<span id="crossing-kind" hidden>{{kind}}</span>
+<span id="crossing-id" hidden>{{id}}</span>
+
+{{#if user}}
+  <p>Signed in as <strong>{{user.username}}</strong></p>
+
+  <nav class="auth-actions" aria-label="Account actions">
+    <a class="btn btn-ghost" href="/explore">Back to Explore</a>
+    <a class="btn btn-ghost" href="/dashboard">Dashboard</a>
+
+    {{!-- Logout is POST; include CSRF --}}
+    <form method="post" action="/logout" style="display:inline;">
+      <input type="hidden" name="csrfToken" value="{{csrfToken}}">
+      <button type="submit" class="btn btn-primary">Logout</button>
+    </form>
+  </nav>
+{{else}}
+  <nav class="auth-actions" aria-label="Authentication">
+    <a class="btn btn-ghost" href="/register">Register</a>
+    <a class="btn btn-primary" href="/login">Login</a>
+    <a class="btn btn-ghost" href="/explore">Back to Explore</a>
+  </nav>
+{{/if}}
+
+{{!-- Page-level error/status message (used by inline JS below) --}}
+<p id="page-error" class="error" hidden role="alert" aria-live="assertive"></p>
+
+<main style="padding:12px;">
+  {{!-- -------------------------
+       Crossing summary
+  -------------------------- --}}
+  <section aria-labelledby="crossing-summary-title" class="section-panel">
+  <div class="panel">
+    <h2 id="crossing-summary-title">Crossing summary</h2>
+
+    <dl class="details-list">
+      <dt>Type</dt>
+      <dd>{{kind}}</dd>
+
+      <dt>ID</dt>
+      <dd>{{id}}</dd>
+
+      {{!-- APS fields --}}
+      {{#if aps}}
+        <dt>Address</dt>
+        <dd>
+          {{#if aps.location}}
+            {{#if aps.location.address}}{{aps.location.address}}{{else}}Not available{{/if}}
+          {{else}}
+            Not available
+          {{/if}}
+        </dd>
+
+        <dt>Borough</dt>
+        <dd>
+          {{#if aps.location}}
+            {{#if aps.location.borough}}{{aps.location.borough}}{{else}}Not available{{/if}}
+          {{else}}
+            Not available
+          {{/if}}
+        </dd>
+
+        <dt>Coordinates</dt>
+        <dd>
+          {{#if hasCoords}}
+            {{aps.location.lat}}, {{aps.location.lng}}
+          {{else}}
+            Not available
+          {{/if}}
+        </dd>
+
+        {{#if aps.installDate}}
+          <dt>Install date</dt>
+          <dd>{{aps.installDate}}</dd>
+        {{/if}}
+      {{/if}}
+
+      {{!-- Ramp fields (only when APS is not present) --}}
+      {{#unless aps}}
+        {{#if ramp}}
+          <dt>Street</dt>
+          <dd>{{#if ramp.streetName}}{{ramp.streetName}}{{else}}Not available{{/if}}</dd>
+
+          <dt>Borough</dt>
+          <dd>{{#if ramp.borough}}{{ramp.borough}}{{else}}Not available{{/if}}</dd>
+
+          <dt>Coordinates</dt>
+          <dd>
+            {{#if hasCoords}}
+              {{ramp.location.lat}}, {{ramp.location.lng}}
+            {{else}}
+              Not available
+            {{/if}}
+          </dd>
+        {{/if}}
+      {{/unless}}
+    </dl>
+
+    {{#if user}}
+      <div class="panel-actions">
+        <button
+          id="follow-crossing-toggle"
+          type="button"
+          class="btn {{#if isBookmarked}}btn-primary{{else}}btn-ghost{{/if}}"
+          data-kind="{{kind}}"
+          data-id="{{id}}"
+          aria-pressed="{{#if isBookmarked}}true{{else}}false{{/if}}"
+        >
+          {{#if isBookmarked}}Unfollow crossing{{else}}Follow crossing{{/if}}
+        </button>
+
+
+        <span id="follow-status" role="status" aria-live="polite"></span>
+      </div>
+
+      <div style="margin-top: 10px;">
+        <button
+          type="button"
+          class="btn btn-primary js-set-report-target"
+          data-target-type="{{reportTargetType}}"
+          data-target-id="{{reportTargetId}}"
+          data-target-label="This crossing"
+        >
+          Report an issue here
+        </button>
+      </div>
+    {{else}}
+      <p class="muted" style="margin-top: 10px;">
+        Log in to follow this crossing and submit a report.
+        <a href="/login">Login</a>
+      </p>
+    {{/if}}
+  </div>
+</section>
+
+
+  <hr>
+
+  {{!-- -------------------------
+       Nearby APS + curb ramps
+  -------------------------- --}}
+  <section aria-labelledby="nearby-title">
+    <h2 id="nearby-title">Nearby accessibility features</h2>
+
+    {{#if hasCoords}}
+      <p>Showing items within a short radius of this crossing (based on stored coordinates).</p>
+
+      <h3>APS intersections</h3>
+      {{#if hasNearbyAPS}}
+        <ul>
+          {{#each nearbyAPS}}
+            <li>
+              <a href="/crossing/{{apsId}}">APS {{apsId}}</a>
+              {{#if location.address}} — {{location.address}}{{/if}}
+              {{#if location.borough}} ({{location.borough}}){{/if}}
+
+              {{#if ../user}}
+                <div style="margin-top:6px;">
+                  <button
+                    type="button"
+                    class="btn btn-ghost js-set-report-target"
+                    data-target-type="aps"
+                    data-target-id="{{apsId}}"
+                    data-target-label="APS {{apsId}}"
+                  >
+                    Report this APS
+                  </button>
+                </div>
+              {{/if}}
+            </li>
+          {{/each}}
+        </ul>
+      {{else}}
+        <p>No nearby APS intersections found.</p>
+      {{/if}}
+
+      <h3>Curb ramps</h3>
+      {{#if hasNearbyRamps}}
+        <ul>
+          {{#each nearbyRamps}}
+            <li>
+              <a href="/crossing/{{rampId}}">Ramp {{rampId}}</a>
+              {{#if streetName}} — {{streetName}}{{/if}}
+              {{#if borough}} ({{borough}}){{/if}}
+
+              {{#if ../user}}
+                <div style="margin-top:6px;">
+                  <button
+                    type="button"
+                    class="btn btn-ghost js-set-report-target"
+                    data-target-type="ramp"
+                    data-target-id="{{rampId}}"
+                    data-target-label="Ramp {{rampId}}"
+                  >
+                    Report this curb ramp
+                  </button>
+                </div>
+              {{/if}}
+            </li>
+          {{/each}}
+        </ul>
+      {{else}}
+        <p>No nearby curb ramps found.</p>
+      {{/if}}
+    {{else}}
+      <p>This crossing record does not include coordinates, so nearby APS/ramps cannot be computed.</p>
+    {{/if}}
+  </section>
+
+  <hr>
+
+  {{!-- -------------------------
+       Community reports (existing + submit new)
+  -------------------------- --}}
+  <section aria-labelledby="reports-title">
+    <h2 id="reports-title">Community reports</h2>
+    <p class="muted">Vote score is reputation-weighted.</p>
+
+    {{!-- Existing reports --}}
+    {{#if hasReports}}
+      <ul id="reports-list">
+        {{#each reports}}
+          <li class="report-item" data-report-id="{{reportId}}">
+            <div class="report-main">
+              <strong>{{reportId}}</strong>
+              — {{targetType}}:{{targetId}}
+              — {{text}}
+              {{#if image}}
+              {{#if image.url}}
+              <div class="report-image" style="margin-top:8px;">
+                <a href="{{image.url}}" target="_blank" rel="noopener">
+                  <img 
+                    src="{{image.url}}"
+                    alt="Report photo"
+                    style="max-width:320px; border-radius:8px;"
+                    loading="lazy">
+
+                </a>
+              </div>
+              {{/if}}
+              {{/if}}
+              {{#if createdBy.username}} — by {{createdBy.username}}{{/if}}
+              {{#if createdAt}} — {{createdAt}}{{/if}}
+              {{#if status}} — status: {{status}}{{/if}}
+            </div>
+
+            <div class="report-votes" data-report-id="{{reportId}}">
+              {{!-- Primary score from DB; votes.score is the weighted score. --}}
+              <span class="vote-score" aria-label="Weighted score">
+                {{#if votes}}
+                  {{votes.score}}
+                {{else}}
+                  0
+                {{/if}}
+              </span>
+
+              {{#if ../user}}
+                <button
+                  type="button"
+                  class="btn btn-ghost vote-btn js-vote-up"
+                  data-vote="1"
+                  aria-pressed="false"
+                  aria-label="Upvote"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost vote-btn js-vote-down"
+                  data-vote="-1"
+                  aria-pressed="false"
+                  aria-label="Downvote"
+                >
+                  ↓
+                </button>
+                <span class="vote-status" role="status" aria-live="polite"></span>
+              {{else}}
+                <span class="vote-muted">
+                  <a href="/login">Login</a> to vote
+                </span>
+              {{/if}}
+            </div>
+
+            {{!-- Duplicate flagging (community moderation signal) --}}
+            <div class="report-dupes" data-report-id="{{reportId}}" style="margin-top:6px;">
+              <span class="dup-metrics" aria-label="Duplicate flags summary">
+                Duplicates:
+                <span class="dup-count">
+                  {{#if duplicateFlags}}{{duplicateFlags.flagCount}}{{else}}0{{/if}}
+                </span>
+                <span aria-hidden="true"> · </span>
+                Weight:
+                <span class="dup-weight">
+                  {{#if duplicateFlags}}{{duplicateFlags.weightTotal}}{{else}}0{{/if}}
+                </span>
+              </span>
+
+              {{#if ../user}}
+                <div style="margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                  {{!-- sr-only requires CSS in main.css --}}
+                  <label class="sr-only" for="dup-canonical-{{reportId}}">Canonical report (optional)</label>
+                  <select
+                    id="dup-canonical-{{reportId}}"
+                    class="dup-canonical"
+                    data-report-id="{{reportId}}"
+                    aria-label="Select canonical report (optional)"
+                  >
+                    <option value="">Select canonical (optional)</option>
+                    {{!-- Options are populated by JS based on reports currently on the page --}}
+                  </select>
+
+                  <button
+                    type="button"
+                    class="btn btn-ghost dup-btn"
+                    data-report-id="{{reportId}}"
+                    aria-pressed="false"
+                    aria-label="Flag this report as a duplicate"
+                  >
+                    Flag duplicate
+                  </button>
+
+                  <span class="dup-status" role="status" aria-live="polite"></span>
+                </div>
+              {{else}}
+                <span class="dup-muted" style="margin-left:10px;">
+                  <a href="/login">Login</a> to flag duplicates
+                </span>
+              {{/if}}
+            </div>
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p id="reports-empty">No reports have been submitted for this crossing yet.</p>
+      <ul id="reports-list"></ul>
+    {{/if}}
+
+    {{!-- Submit new report (AJAX) --}}
+    {{#if user}}
+      <section aria-label="Submit a report" style="margin-top:12px;">
+        <h3>Submit a new report</h3>
+
+        <p id="report-target-label" aria-live="polite"></p>
+
+        <form id="report-form">
+          <input type="hidden" id="report-target-type" name="targetType" value="{{reportTargetType}}">
+          <input type="hidden" id="report-target-id" name="targetId" value="{{reportTargetId}}">
+
+          <label for="report-text">Describe the issue</label>
+          <textarea
+            id="report-text"
+            name="text"
+            rows="4"
+            required
+            maxlength="500"
+            aria-describedby="report-help"
+            placeholder="e.g., APS button is blocked by scaffolding."
+            style="width:100%; max-width:720px;"
+          ></textarea>
+          <div style="margin-top:10px">
+          <label for="report-image" style="display:block; margin-bottom:6px;">Optional Image</label>
+          </div>
+          
+          <input id="report-image" name="image" type="file" accept="image/*"/>
+          <p class="muted" id="report-image-help">JPEG/PNG</p>
+
+          <img id="report-image-preview" alt="" style="display:none; max-width:320px; margin-top:8px; border-radius:8px;">
+          <button type="button" id="report-image-clear" class="btn btn-ghost" style="display:none;margin-top:6px">Remove Image</button>
+
+          <p id="report-help">
+            Include specifics like exact corner, curb cut location, or what makes it inaccessible.
+          </p>
+
+          <div class="form-actions" style="display:flex; gap:10px; align-items:center;">
+            <button type="submit" class="btn btn-primary">Submit</button>
+            <button type="button" id="report-reset" class="btn btn-ghost">Reset to this crossing</button>
+          </div>
+        </form>
+
+        <p id="report-status" role="status" aria-live="polite" style="margin-top:8px;"></p>
+      </section>
+    {{else}}
+      <p>
+        Log in to submit a report.
+        <a href="/login">Login</a>
+      </p>
+    {{/if}}
+  </section>
+</main>
+
+{{!-- Inline page JS:
+     - Follow/unfollow (AJAX -> /api/crossings/:kind/:id/follow|unfollow)
+     - Report submission (AJAX -> /api/reports)
+     - Report target switching (this crossing / nearby APS / nearby ramps) via buttons above
+     - Report voting (AJAX -> /api/reports/:reportId/vote)
+     - Duplicate flagging (AJAX -> /api/reports/:reportId/duplicate)
+--}}
+<script>
+(() => {
+  // -------- Shared helpers --------
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+  const pageError = document.getElementById('page-error');
+  function showPageError(msg) {
+    if (!pageError) return;
+    pageError.hidden = false;
+    pageError.textContent = 'Error: ' + String(msg);
+  }
+  function clearPageError() {
+    if (!pageError) return;
+    pageError.hidden = true;
+    pageError.textContent = '';
+  }
+
+  function escapeHtml(value) {
+    const s = String(value ?? '');
+    return s.replace(/[&<>"']/g, (ch) => {
+      switch (ch) {
+        case '&': return '&amp;';
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '"': return '&quot;';
+        case "'": return '&#39;';
+        default: return ch;
+      }
+    });
+  }
+
+  function formatScore(n) {
+    const num = Number(n);
+    if (!Number.isFinite(num)) return '0';
+    const rounded = Math.round(num * 100) / 100;
+    const isInt = Math.abs(rounded - Math.round(rounded)) < 1e-9;
+    return isInt ? String(Math.trunc(Math.round(rounded))) : rounded.toFixed(2);
+  }
+
+  async function readErrorPayload(resp) {
+    const ct = resp.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      const data = await resp.json().catch(() => ({}));
+      return data?.error ? String(data.error) : '';
+    }
+    const text = await resp.text().catch(() => '');
+    return text ? String(text) : '';
+  }
+
+  // -------- Page identifiers --------
+  const crossingKind = (document.getElementById('crossing-kind')?.textContent || '').trim();
+  const crossingId = (document.getElementById('crossing-id')?.textContent || '').trim();
+
+  // -------- Follow/unfollow crossing --------
+  const followBtn = document.getElementById('follow-crossing-toggle');
+  const followStatus = document.getElementById('follow-status');
+
+  function setFollowStatus(msg) {
+    if (!followStatus) return;
+    followStatus.textContent = msg ? String(msg) : '';
+  }
+
+  function applyFollowUI(followed) {
+    if (!followBtn) return;
+    const isFollowed = Boolean(followed);
+
+    followBtn.setAttribute('aria-pressed', isFollowed ? 'true' : 'false');
+    followBtn.textContent = isFollowed ? 'Unfollow crossing' : 'Follow crossing';
+
+    followBtn.classList.toggle('btn-primary', isFollowed);
+    followBtn.classList.toggle('btn-ghost', !isFollowed);
+  }
+
+  async function postCrossingFollow(kind, id, shouldFollow) {
+    if (!csrfToken) throw new Error('Missing CSRF token (check <meta name="csrf-token">).');
+
+    const action = shouldFollow ? 'follow' : 'unfollow';
+    const url = `/api/crossings/${encodeURIComponent(String(kind))}/${encodeURIComponent(String(id))}/${action}`;
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      }
+    });
+
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+
+    return resp.json().catch(() => ({}));
+  }
+
+  if (followBtn) {
+    // Normalize initial state to match server-rendered aria-pressed
+    const initialFollowed = followBtn.getAttribute('aria-pressed') === 'true';
+    applyFollowUI(initialFollowed);
+
+    followBtn.addEventListener('click', async () => {
+      clearPageError();
+      setFollowStatus('');
+
+      const kind = String(followBtn.dataset.kind || crossingKind || '').trim();
+      const id = String(followBtn.dataset.id || crossingId || '').trim();
+
+      if (!kind || !id) {
+        showPageError('Missing crossing identifiers.');
+        return;
+      }
+
+      const isFollowed = followBtn.getAttribute('aria-pressed') === 'true';
+      const nextState = !isFollowed;
+
+      followBtn.disabled = true;
+      setFollowStatus('Saving...');
+
+      try {
+        const data = await postCrossingFollow(kind, id, nextState);
+
+        // Prefer server response if present
+        const followed = typeof data.followed === 'boolean' ? data.followed : nextState;
+        applyFollowUI(followed);
+        setFollowStatus(followed ? 'Followed.' : 'Unfollowed.');
+      } catch (err) {
+        showPageError(err?.message || String(err));
+        setFollowStatus('');
+      } finally {
+        followBtn.disabled = false;
+      }
+    });
+  }
+
+  // -------- Report target switching + submit --------
+  const reportForm = document.getElementById('report-form');
+  const reportTargetLabel = document.getElementById('report-target-label');
+  const reportTargetType = document.getElementById('report-target-type');
+  const reportTargetId = document.getElementById('report-target-id');
+  const reportText = document.getElementById('report-text');
+  const reportStatus = document.getElementById('report-status');
+  const reportReset = document.getElementById('report-reset');
+  const reportImage = document.getElementById("report-image");
+  const reportImagePreview = document.getElementById("report-image-preview");
+  const reportImageClear = document.getElementById("report-image-clear");
+
+  function setReportStatus(msg) {
+    if (!reportStatus) return;
+    reportStatus.textContent = msg ? String(msg) : '';
+  }
+
+  function setReportTarget(type, id, label) {
+    if (!reportTargetType || !reportTargetId) return;
+
+    reportTargetType.value = String(type || '').trim();
+    reportTargetId.value = String(id || '').trim();
+
+    if (reportTargetLabel) {
+      const safeLabel = label ? String(label) : `${type}:${id}`;
+      reportTargetLabel.textContent = `Reporting: ${safeLabel} (${type}:${id})`;
+    }
+  }
+
+  const kindFallbackType = (crossingKind === 'aps' || crossingKind === 'ramp') ? crossingKind : '';
+  const defaultTargetType = reportTargetType?.value || kindFallbackType;
+  const defaultTargetId = reportTargetId?.value || crossingId;
+
+  const crossingLabel = (document.getElementById('crossing-label')?.textContent || '').trim();
+  const defaultTargetLabel = crossingLabel || 'This crossing';
+
+  // Initialize label on page load (only if the form exists).
+  if (reportTargetType && reportTargetId) {
+    setReportTarget(defaultTargetType, defaultTargetId, defaultTargetLabel);
+  }
+
+  // Click handler for "Report this ..." buttons.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.js-set-report-target');
+    if (!btn) return;
+
+    // If not logged in, there is no form to target-switch.
+    if (!reportForm) return;
+
+    e.preventDefault();
+    clearPageError();
+    setReportStatus('');
+
+    const type = btn.dataset.targetType || '';
+    const id = btn.dataset.targetId || '';
+    const label = btn.dataset.targetLabel || 'Location';
+
+    if (!type || !id) return;
+    setReportTarget(type, id, label);
+    reportText?.focus?.();
+  });
+
+  // Reset back to default crossing target.
+  if (reportReset) {
+    reportReset.addEventListener('click', () => {
+      if (!reportForm) return;
+      clearPageError();
+      setReportStatus('');
+      setReportTarget(defaultTargetType, defaultTargetId, defaultTargetLabel);
+      reportText?.focus?.();
+    });
+  }
+
+  function buildReportListItem(report) {
+    const rep = report || {};
+    const rid = String(rep.reportId || '').trim();
+    if (!rid) return null;
+
+    const targetType = escapeHtml(rep.targetType || '');
+    const targetId = escapeHtml(rep.targetId || '');
+    const text = escapeHtml(rep.text || '');
+    const by = rep?.createdBy?.username ? escapeHtml(rep.createdBy.username) : '';
+    const createdAt = rep?.createdAt ? escapeHtml(rep.createdAt) : '';
+    const status = rep?.status ? escapeHtml(rep.status) : '';
+
+    let imageHtml = "";
+    if(rep.image && rep.image.url)
+    {
+      const imgUrl = escapeHtml(rep.image.url);
+      imageHtml = `<div class="report-image" style="margin-top:8px;">
+                    <a href="${imgUrl}" target="_blank" rel="noopener">
+                      <img src="${imgUrl}" alt="Report Photo" style="max-width:320px; border-radius:8px;">
+                      </a>
+                      </div>`;
+    }
+    const initialScore =
+      (rep?.votes && (rep.votes.score ?? rep.votes.weightedScore ?? rep.votes.rawScore)) ?? 0;
+
+    const initialDupCount = (rep?.duplicateFlags && Number(rep.duplicateFlags.flagCount)) || 0;
+    const initialDupWeight = (rep?.duplicateFlags && Number(rep.duplicateFlags.weightTotal)) || 0;
+
+    const li = document.createElement('li');
+    li.className = 'report-item';
+    li.dataset.reportId = rid;
+
+    // Note: This builder is only used when the user is logged in (report form exists),
+    // so we always include interactive vote + duplicate widgets here.
+    li.innerHTML = `
+      <div class="report-main">
+        <strong>${escapeHtml(rid)}</strong>
+        — ${targetType}:${targetId}
+        — ${text}
+        ${imageHtml}
+        ${by ? ` — by ${by}` : ''}
+        ${createdAt ? ` — ${createdAt}` : ''}
+        ${status ? ` — status: ${status}` : ''}
+      </div>
+
+      <div class="report-votes" data-report-id="${escapeHtml(rid)}">
+        <span class="vote-score" aria-label="Weighted score">${escapeHtml(formatScore(initialScore))}</span>
+        <button type="button" class="btn btn-ghost vote-btn js-vote-up" data-vote="1" aria-pressed="false" aria-label="Upvote">↑</button>
+        <button type="button" class="btn btn-ghost vote-btn js-vote-down" data-vote="-1" aria-pressed="false" aria-label="Downvote">↓</button>
+        <span class="vote-status" role="status" aria-live="polite"></span>
+      </div>
+
+      <div class="report-dupes" data-report-id="${escapeHtml(rid)}" style="margin-top:6px;">
+        <span class="dup-metrics" aria-label="Duplicate flags summary">
+          Duplicates: <span class="dup-count">${escapeHtml(String(Math.max(0, Math.trunc(initialDupCount))))}</span>
+          <span aria-hidden="true"> · </span>
+          Weight: <span class="dup-weight">${escapeHtml(formatScore(initialDupWeight))}</span>
+        </span>
+
+        <div style="margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <label class="sr-only" for="dup-canonical-${escapeHtml(rid)}">Canonical report (optional)</label>
+          <select
+            id="dup-canonical-${escapeHtml(rid)}"
+            class="dup-canonical"
+            data-report-id="${escapeHtml(rid)}"
+            aria-label="Select canonical report (optional)"
+          >
+            <option value="">Select canonical (optional)</option>
+          </select>
+
+          <button
+            type="button"
+            class="btn btn-ghost dup-btn"
+            data-report-id="${escapeHtml(rid)}"
+            aria-pressed="false"
+            aria-label="Flag this report as a duplicate"
+          >Flag duplicate</button>
+
+          <span class="dup-status" role="status" aria-live="polite"></span>
+        </div>
+      </div>
+    `;
+
+    return li;
+  }
+
+  // Submit report (AJAX POST /api/reports)
+  if (reportForm) {
+    reportForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearPageError();
+      setReportStatus('');
+
+      const payload = {
+        targetType: reportTargetType?.value || '',
+        targetId: reportTargetId?.value || '',
+        text: reportText?.value?.trim() || ''
+      };
+
+      const fd = new FormData();
+      fd.append('targetType', payload.targetType);
+      fd.append('targetId', payload.targetId);
+      fd.append('text', payload.text);
+
+      if(reportImage?.files?.[0])
+      {
+        fd.append("image", reportImage.files[0]);
+      }
+
+      if (!payload.targetType || !payload.targetId) {
+        setReportStatus('Missing target information.');
+        return;
+      }
+      if (!payload.text) {
+        setReportStatus('Please enter a description.');
+        return;
+      }
+      if (!csrfToken) {
+        setReportStatus('Missing CSRF token (check <meta name="csrf-token">).');
+        return;
+      }
+
+      try {
+        const resp = await fetch('/api/reports', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            Accept: 'application/json',
+            'x-csrf-token': csrfToken
+          },
+          body: fd
+        });
+
+        if (!resp.ok) {
+          const msg = (await readErrorPayload(resp)) || `Submit failed (HTTP ${resp.status})`;
+          setReportStatus(msg);
+          return;
+        }
+
+        const data = await resp.json().catch(() => ({}));
+        const rid = data?.report?.reportId || '';
+
+        setReportStatus(rid ? `Submitted successfully. Report ID: ${rid}` : 'Submitted successfully.');
+        if (reportText) 
+        {
+            reportText.value = '';
+            clearSelectedImage();
+
+        }
+
+        // Prepend the new report to the list for instant feedback (with vote + duplicate widgets).
+        const list = document.getElementById('reports-list');
+        const empty = document.getElementById('reports-empty');
+        if (list && data?.report) {
+          if (empty) empty.remove();
+
+          const li = buildReportListItem(data.report);
+          if (li) {
+            list.prepend(li);
+
+            // Rebuild canonical dropdown options for ALL reports (new report becomes a candidate).
+            populateDupSelects();
+
+            // Best-effort: initialize the newly inserted vote widget.
+            if (rid) {
+              const newVoteWidget = li.querySelector('.report-votes[data-report-id]');
+              if (newVoteWidget) {
+                try {
+                  const v = await getVotes(rid);
+                  setVoteWidgetUI(newVoteWidget, v.totals, v.myVote);
+                } catch (_) {
+                  // Best-effort; ignore
+                }
+              }
+
+              // Best-effort: initialize the newly inserted duplicate widget.
+              const newDupWidget = li.querySelector('.report-dupes[data-report-id]');
+              if (newDupWidget) {
+                try {
+                  const d = await getDup(rid);
+                  setDupWidgetUI(newDupWidget, d.totals, d.myFlag);
+                } catch (_) {
+                  // Best-effort; ignore
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        setReportStatus(err?.message || String(err));
+      }
+    });
+  }
+ //-------Images-------
+let previewObjectUrl = "";
+ function clearSelectedImage()
+ {
+  if(previewObjectUrl)
+  {
+    URL.revokeObjectURL(previewObjectUrl)
+    previewObjectUrl = "";
+  }
+  if(reportImage)
+  {
+    reportImage.value = "";
+  }
+  if(reportImagePreview)
+  {
+    reportImagePreview.src = "";
+    reportImagePreview.alt = "";
+    reportImagePreview.style.display = "none";
+    
+  }
+  if(reportImageClear)
+  {
+    reportImageClear.style.display ="none";
+  }
+ }
+ if (reportImage)
+ {
+  reportImage.addEventListener('change', () => 
+  {
+    clearPageError();
+    setReportStatus('');
+    const file = reportImage.files && reportImage.files[0];
+    if(!file)
+    {
+      clearSelectedImage();
+      return;
+    }
+    if(!file.type || !file.type.startsWith('image/'))
+    {
+      setReportStatus("Please choose an image file.");
+      clearSelectedImage();
+      return;
+    }
+
+    if(previewObjectUrl)
+    {
+      URL.revokeObjectURL(previewObjectUrl);
+    }
+    previewObjectUrl = URL.createObjectURL(file);
+
+    if(reportImagePreview)
+    {
+      reportImagePreview.src = previewObjectUrl;
+      reportImagePreview.alt = "Selected report photo preview";
+      reportImagePreview.style.display = "block";
+    }
+    if(reportImageClear)
+    {
+      reportImageClear.style.display = "inline-block";
+    }
+  });
+ }
+ if(reportImageClear)
+ {
+  reportImageClear.addEventListener('click', clearSelectedImage);
+ }
+  // -------- Voting --------
+  async function getVotes(reportId) {
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/votes`;
+    const resp = await fetch(url, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    });
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Vote fetch failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  async function postVote(reportId, vote) {
+    if (!csrfToken) throw new Error('Missing CSRF token.');
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/vote`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      },
+      body: JSON.stringify({ vote: vote })
+    });
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Vote request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  async function deleteVote(reportId) {
+    if (!csrfToken) throw new Error('Missing CSRF token.');
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/vote`;
+    const resp = await fetch(url, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      }
+    });
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Vote request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  function setVoteWidgetUI(widget, totals, myVote) {
+    if (!widget) return;
+
+    const scoreEl = widget.querySelector('.vote-score');
+    const upBtn = widget.querySelector('.js-vote-up');
+    const downBtn = widget.querySelector('.js-vote-down');
+
+    // Primary display: totals.score (server-normalized to reputation-weighted score).
+    let score = 0;
+    if (totals && Number.isFinite(Number(totals.score))) score = Number(totals.score);
+    else if (totals && Number.isFinite(Number(totals.weightedScore))) score = Number(totals.weightedScore);
+    else if (totals && Number.isFinite(Number(totals.rawScore))) score = Number(totals.rawScore);
+
+    if (scoreEl) {
+      const wTxt = formatScore(score);
+      scoreEl.textContent = wTxt;
+
+      const raw = totals && Number.isFinite(Number(totals.rawScore)) ? Number(totals.rawScore) : null;
+      if (raw !== null && Number.isFinite(raw)) {
+        const rTxt = formatScore(raw);
+        scoreEl.title = (wTxt !== rTxt)
+          ? `Weighted score: ${wTxt}. Raw score: ${rTxt}.`
+          : `Score: ${wTxt}.`;
+      } else {
+        scoreEl.title = `Score: ${wTxt}.`;
+      }
+    }
+
+    const mine = Number(myVote);
+    if (upBtn) upBtn.setAttribute('aria-pressed', mine === 1 ? 'true' : 'false');
+    if (downBtn) downBtn.setAttribute('aria-pressed', mine === -1 ? 'true' : 'false');
+  }
+
+  function setVoteStatus(widgetEl, msg) {
+    if (!widgetEl) return;
+    const el = widgetEl.querySelector('.vote-status');
+    if (!el) return;
+    el.textContent = msg ? String(msg) : '';
+  }
+
+  async function initVotes() {
+    const widgets = document.querySelectorAll('.report-votes[data-report-id]');
+    for (let i = 0; i < widgets.length; i++) {
+      const w = widgets[i];
+      const reportId = String(w.dataset.reportId || '').trim();
+      if (!reportId) continue;
+
+      try {
+        const data = await getVotes(reportId);
+        setVoteWidgetUI(w, data.totals, data.myVote);
+      } catch (_) {
+        // Best-effort; do not block page render if one widget fails.
+      }
+    }
+  }
+
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.vote-btn');
+    if (!btn) return;
+
+    const widget = btn.closest('.report-votes');
+    if (!widget) return;
+
+    const reportId = String(widget.dataset.reportId || '').trim();
+    if (!reportId) return;
+
+    clearPageError();
+    setVoteStatus(widget, '');
+
+    const voteVal = Number(btn.dataset.vote);
+    if (voteVal !== 1 && voteVal !== -1) return;
+
+    const upBtn = widget.querySelector('.js-vote-up');
+    const downBtn = widget.querySelector('.js-vote-down');
+
+    const currentUp = upBtn && upBtn.getAttribute('aria-pressed') === 'true';
+    const currentDown = downBtn && downBtn.getAttribute('aria-pressed') === 'true';
+
+    let currentMyVote = 0;
+    if (currentUp) currentMyVote = 1;
+    if (currentDown) currentMyVote = -1;
+
+    if (!csrfToken) {
+      setVoteStatus(widget, 'Missing CSRF token.');
+      showPageError('Missing CSRF token (check <meta name="csrf-token">).');
+      return;
+    }
+
+    if (upBtn) upBtn.disabled = true;
+    if (downBtn) downBtn.disabled = true;
+
+    try {
+      let data;
+      if (currentMyVote === voteVal) {
+        data = await deleteVote(reportId);
+        setVoteStatus(widget, 'Vote removed.');
+      } else {
+        data = await postVote(reportId, voteVal);
+        setVoteStatus(widget, 'Vote recorded.');
+      }
+
+      setVoteWidgetUI(widget, data.totals, data.myVote);
+    } catch (err) {
+      showPageError(err?.message || String(err));
+    } finally {
+      if (upBtn) upBtn.disabled = false;
+      if (downBtn) downBtn.disabled = false;
+    }
+  });
+
+  // -------- Duplicate flagging --------
+  // The UI supports:
+  // - Flag / Unflag duplicate (button)
+  // - Optional canonical selection (dropdown)
+  // - If already flagged, changing the dropdown updates canonicalReportId via POST
+
+  function setDupStatus(widgetEl, msg) {
+    if (!widgetEl) return;
+    const el = widgetEl.querySelector('.dup-status');
+    if (!el) return;
+    el.textContent = msg ? String(msg) : '';
+  }
+
+  function ensureSelectHasOption(selectEl, value) {
+    if (!selectEl) return;
+    const v = String(value || '').trim();
+    if (!v) return;
+
+    const exists = Array.from(selectEl.options).some((o) => String(o.value) === v);
+    if (exists) return;
+
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = `${v} (not listed)`;
+
+    // Insert after the empty option if possible.
+    const afterEmpty = selectEl.querySelector('option[value=""]');
+    if (afterEmpty && afterEmpty.nextSibling) {
+      selectEl.insertBefore(opt, afterEmpty.nextSibling);
+    } else {
+      selectEl.appendChild(opt);
+    }
+  }
+
+  function setDupWidgetUI(widget, totals, myFlag) {
+    if (!widget) return;
+
+    const countEl = widget.querySelector('.dup-count');
+    const weightEl = widget.querySelector('.dup-weight');
+
+    const flagCount = totals && Number.isFinite(Number(totals.flagCount))
+      ? Math.max(0, Math.trunc(Number(totals.flagCount)))
+      : 0;
+
+    const weightTotal = totals && Number.isFinite(Number(totals.weightTotal))
+      ? Math.max(0, Number(totals.weightTotal))
+      : 0;
+
+    if (countEl) countEl.textContent = String(flagCount);
+    if (weightEl) weightEl.textContent = formatScore(weightTotal);
+
+    if (countEl) countEl.title = `Duplicate flags: ${flagCount}`;
+    if (weightEl) weightEl.title = `Reputation-weighted total: ${formatScore(weightTotal)}`;
+
+    const flagged = Boolean(myFlag && myFlag.flagged === true);
+    const canonical = myFlag && typeof myFlag.canonicalReportId === 'string'
+      ? myFlag.canonicalReportId.trim()
+      : '';
+
+    const btn = widget.querySelector('.dup-btn');
+    const sel = widget.querySelector('.dup-canonical');
+
+    if (btn) {
+      btn.setAttribute('aria-pressed', flagged ? 'true' : 'false');
+      btn.textContent = flagged ? 'Unflag duplicate' : 'Flag duplicate';
+      btn.classList.toggle('btn-primary', flagged);
+      btn.classList.toggle('btn-ghost', !flagged);
+    }
+
+    if (sel) {
+      ensureSelectHasOption(sel, canonical);
+      sel.value = canonical || '';
+    }
+  }
+
+  async function getDup(reportId) {
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/duplicate`;
+    const resp = await fetch(url, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    });
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Duplicate fetch failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  async function postDupFlag(reportId, canonicalReportIdOrEmpty) {
+    if (!csrfToken) throw new Error('Missing CSRF token.');
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/duplicate`;
+
+    // Preserve tri-state semantics:
+    // - If canonical is non-empty: send it
+    // - If canonical is empty: OMIT the field (do not forcibly clear server-side canonical on re-POST)
+    const bodyObj = {};
+    const c = String(canonicalReportIdOrEmpty || '').trim();
+    if (c) bodyObj.canonicalReportId = c;
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      },
+      body: JSON.stringify(bodyObj)
+    });
+
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Duplicate request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  async function postDupCanonical(reportId, canonicalReportIdOrEmpty) {
+    if (!csrfToken) throw new Error('Missing CSRF token.');
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/duplicate`;
+
+    // Canonical update is explicit user intent, so ALWAYS send the field (including empty to clear).
+    const bodyObj = { canonicalReportId: String(canonicalReportIdOrEmpty ?? '') };
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      },
+      body: JSON.stringify(bodyObj)
+    });
+
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Duplicate request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  async function deleteDup(reportId) {
+    if (!csrfToken) throw new Error('Missing CSRF token.');
+    const url = `/api/reports/${encodeURIComponent(String(reportId))}/duplicate`;
+    const resp = await fetch(url, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'x-csrf-token': csrfToken
+      }
+    });
+    if (!resp.ok) {
+      const msg = (await readErrorPayload(resp)) || `Duplicate request failed (HTTP ${resp.status})`;
+      throw new Error(msg);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
+  function getAllReportIdsOnPage() {
+    return Array.from(document.querySelectorAll('.report-item[data-report-id]'))
+      .map((el) => String(el.dataset.reportId || '').trim())
+      .filter(Boolean);
+  }
+
+  // Populate every canonical dropdown with report IDs currently rendered on this page.
+  // Each dropdown excludes its own reportId to prevent selecting itself.
+  function populateDupSelects() {
+    const allIds = getAllReportIdsOnPage();
+    const selects = document.querySelectorAll('.dup-canonical[data-report-id]');
+
+    selects.forEach((sel) => {
+      const myRid = String(sel.dataset.reportId || '').trim();
+      const currentValue = String(sel.value || '');
+
+      // Rebuild options (keep an empty default option).
+      sel.innerHTML = '';
+      const emptyOpt = document.createElement('option');
+      emptyOpt.value = '';
+      emptyOpt.textContent = 'Select canonical (optional)';
+      sel.appendChild(emptyOpt);
+
+      allIds.forEach((rid) => {
+        if (!rid || rid === myRid) return;
+        const opt = document.createElement('option');
+        opt.value = rid;
+        opt.textContent = rid;
+        sel.appendChild(opt);
+      });
+
+      // Restore selection if it is still valid; otherwise keep empty.
+      if (currentValue) {
+        ensureSelectHasOption(sel, currentValue);
+        sel.value = currentValue;
+      }
+    });
+  }
+
+  async function initDupes() {
+    const widgets = document.querySelectorAll('.report-dupes[data-report-id]');
+    for (let i = 0; i < widgets.length; i++) {
+      const w = widgets[i];
+      const reportId = String(w.dataset.reportId || '').trim();
+      if (!reportId) continue;
+
+      try {
+        const data = await getDup(reportId);
+        setDupWidgetUI(w, data.totals, data.myFlag);
+      } catch (_) {
+        // Best-effort; do not block page render if one widget fails.
+      }
+    }
+  }
+
+  // Button click handler: flag/unflag.
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.dup-btn');
+    if (!btn) return;
+
+    const widget = btn.closest('.report-dupes');
+    if (!widget) return;
+
+    const reportId = String(widget.dataset.reportId || btn.dataset.reportId || '').trim();
+    if (!reportId) return;
+
+    clearPageError();
+    setDupStatus(widget, '');
+
+    const sel = widget.querySelector('.dup-canonical');
+    const currentlyFlagged = btn.getAttribute('aria-pressed') === 'true';
+
+    btn.disabled = true;
+    if (sel) sel.disabled = true;
+
+    try {
+      let data;
+      if (currentlyFlagged) {
+        data = await deleteDup(reportId);
+        setDupStatus(widget, 'Duplicate flag removed.');
+      } else {
+        const canonical = sel ? String(sel.value || '') : '';
+        data = await postDupFlag(reportId, canonical);
+        setDupStatus(widget, 'Duplicate flag recorded.');
+      }
+
+      setDupWidgetUI(widget, data.totals, data.myFlag);
+    } catch (err) {
+      showPageError(err?.message || String(err));
+    } finally {
+      btn.disabled = false;
+      if (sel) sel.disabled = false;
+    }
+  });
+
+  // Dropdown change handler: if already flagged, update canonical (including clearing canonical).
+  document.addEventListener('change', async (e) => {
+    const sel = e.target.closest('.dup-canonical');
+    if (!sel) return;
+
+    const widget = sel.closest('.report-dupes');
+    if (!widget) return;
+
+    const btn = widget.querySelector('.dup-btn');
+    if (!btn) return; // not logged in / no button rendered
+
+    const flagged = btn.getAttribute('aria-pressed') === 'true';
+    if (!flagged) return; // only update canonical if the user has already flagged
+
+    const reportId = String(widget.dataset.reportId || sel.dataset.reportId || '').trim();
+    if (!reportId) return;
+
+    clearPageError();
+    setDupStatus(widget, '');
+
+    btn.disabled = true;
+    sel.disabled = true;
+
+    try {
+      const canonical = String(sel.value ?? '');
+      const data = await postDupCanonical(reportId, canonical);
+      setDupStatus(widget, canonical.trim() ? 'Canonical updated.' : 'Canonical cleared.');
+      setDupWidgetUI(widget, data.totals, data.myFlag);
+    } catch (err) {
+      showPageError(err?.message || String(err));
+    } finally {
+      btn.disabled = false;
+      sel.disabled = false;
+    }
+  });
+
+  // Init widgets (order matters: populate canonical choices before applying server state).
+  populateDupSelects();
+  initVotes();
+  initDupes();
+})();
+</script>
