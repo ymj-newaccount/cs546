@@ -42,10 +42,17 @@ An accessibility-focused NYC transit companion. This project ingests multiple NY
 - **Admin Dashboard** (`GET /admin`, requires admin)
   - **Sync Data**: runs `seedAll()` to refresh all open-data collections
   - **Report moderation**: Hide / Unhide / Delete (CSRF-protected)
+  - For ease, the first registered user is the admin
 
 - **Auth + Security**
   - Register / Login / Logout with sessions
   - CSRF protection for both form POSTs and AJAX POSTs
+
+---
+
+## Extra Features
+
+- **Dark/Light mode** - toggles dark or light mode for the user
 
 ---
 
