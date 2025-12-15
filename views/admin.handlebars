@@ -4,6 +4,14 @@
   <p><strong>Data sync completed.</strong></p>
 {{/if}}
 
+{{#if merged}}
+  <p><strong>Merge completed.</strong> Kept: {{mergeKeep}}; Merged (hidden): {{mergeDup}}</p>
+{{/if}}
+
+{{#if mergeFailed}}
+  <p><strong>Merge failed.</strong> Please check server logs for details.</p>
+{{/if}}
+
 <p>This is the admin dashboard for CommuteAble NYC.</p>
 <p>The button below triggers a full snapshot import (seedAll) from the
    external open-data sources into MongoDB.</p>
@@ -11,6 +19,28 @@
 <form method="post" action="/admin/sync" style="margin-bottom: 1.5rem;">
   <input type="hidden" name="csrfToken" value="{{csrfToken}}">
   <button type="submit">Sync Data (run seedAll)</button>
+</form>
+
+<hr />
+
+<h2>Merge Duplicate Reports</h2>
+
+<form method="post" action="/admin/reports/merge" style="margin: 1rem 0 1.5rem 0;">
+  <input type="hidden" name="csrfToken" value="{{csrfToken}}">
+
+  <div style="margin-bottom: 0.75rem;">
+    <label for="keepReportId" style="display:inline-block;width:180px;">Keep reportId:</label>
+    <input id="keepReportId" name="keepReportId" required autocomplete="off">
+  </div>
+
+  <div style="margin-bottom: 0.75rem;">
+    <label for="dupReportId" style="display:inline-block;width:180px;">Duplicate reportId:</label>
+    <input id="dupReportId" name="dupReportId" required autocomplete="off">
+  </div>
+
+  <button type="submit" onclick="return confirm('Merge duplicate into keep? Duplicate will be hidden.');">
+    Merge
+  </button>
 </form>
 
 <hr />

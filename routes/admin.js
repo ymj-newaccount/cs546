@@ -6,7 +6,8 @@ import {
   getRecentReports,
   hideReport,
   unhideReport,
-  deleteReport
+  deleteReport,
+  mergeDuplicateReports
 } from '../data/reportsAdmin.js';
 
 const router = express.Router();
@@ -126,6 +127,13 @@ function ensureAdmin(req, res, next) {
 // GET /admin
 router.get('/', ensureAdmin, async (req, res) => {
   const synced = req.query.synced === '1';
+
+  // NEW: merge status
+  const merged = req.query.merged === '1';
+  const mergeFailed = req.query.mergeFailed === '1';
+  const mergeKeep = typeof req.query.keep === 'string' ? req.query.keep : '';
+  const mergeDup  = typeof req.query.dup === 'string' ? req.query.dup : '';
+
   const csrfToken = issueCsrfToken(req, res);
 
   let reports = [];
@@ -143,6 +151,13 @@ router.get('/', ensureAdmin, async (req, res) => {
   return res.render('admin', {
     title: 'Admin Dashboard',
     synced,
+
+    // NEW: merge status
+    merged,
+    mergeFailed,
+    mergeKeep,
+    mergeDup,
+
     reports,
     hasReports: reports.length > 0,
     csrfToken
@@ -198,5 +213,29 @@ router.post('/reports/:reportId/delete', ensureAdmin, requireCsrf, async (req, r
   }
   return res.redirect('/admin');
 });
+
+// POST /admin/reports/merge
+router.post('/reports/merge', ensureAdmin, requireCsrf, async (req, res) => {
+  const keepReportId = String(req.body?.keepReportId ?? '').trim();
+  const dupReportId  = String(req.body?.dupReportId  ?? '').trim();
+
+  if (!keepReportId || !dupReportId) {
+    return res.status(400).send('keepReportId and dupReportId are required');
+  }
+  if (keepReportId === dupReportId) {
+    return res.status(400).send('keepReportId and dupReportId must be different');
+  }
+
+  try {
+    await mergeDuplicateReports(keepReportId, dupReportId);
+    return res.redirect(
+      `/admin?merged=1&keep=${encodeURIComponent(keepReportId)}&dup=${encodeURIComponent(dupReportId)}`
+    );
+  } catch (err) {
+    console.error(`Error merging duplicate report ${dupReportId} into ${keepReportId}:`, err);
+    return res.redirect('/admin?mergeFailed=1');
+  }
+});
+
 
 export default router;
